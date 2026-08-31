@@ -1,0 +1,10 @@
+{
+  "name":"the-bg-web-v1",
+  "version":"1.0.0",
+  "private":true,
+  "description":"THE BG WEB - Company Management & Digital Workplace System",
+  "main":"server.js",
+  "scripts":{"start":"node server.js","dev":"node server.js"},
+  "engines":{"node":">=20"},
+  "dependencies":{"better-sqlite3":"^11.10.0","bcryptjs":"^3.0.2","cookie-parser":"^1.4.7","express":"^5.1.0","jsonwebtoken":"^9.0.2","multer":"^2.0.2"}
+}
