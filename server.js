@@ -37,7 +37,20 @@ const upload=multer({fileFilter:(req,file,cb)=>cb(null,allowedMime.has(file.mime
 function auth(req,res,next){try{const token=req.cookies.bg_token;if(!token)throw 0;req.user=jwt.verify(token,EFFECTIVE_JWT_SECRET);next();}catch(e){res.status(401).json({error:'Not authenticated'});}}
 function d1(req){return req.user.department_id==='D1'}function log(req,action,type,id,original=null,changed=null,reason=''){db.prepare('INSERT INTO audit(action,record_type,record_id,original_json,changed_json,reason,who_user) VALUES(?,?,?,?,?,?,?)').run(action,type,id,original?JSON.stringify(original):null,changed?JSON.stringify(changed):null,reason,req.user.id)}
 function rows(sql,...p){return db.prepare(sql).all(...p)}function one(sql,...p){return db.prepare(sql).get(...p)}
-app.post('/api/login',loginGuard,(req,res)=>{const {username,password}=req.body;const u=one('SELECT * FROM users WHERE username=? AND active=1',username);if(!u||!bcrypt.compareSync(password||'',u.password_hash)){req._loginState.n++;loginAttempts.set(req._loginKey,req._loginState);return res.status(401).json({error:'Invalid login'});}loginAttempts.delete(req._loginKey);const token=jwt.sign({id:u.id,name:u.name,username:u.username,department_id:u.department_id},EFFECTIVE_JWT_SECRET,{expiresIn:'7d'});res.cookie('bg_token',token,{httpOnly:true,sameSite:'lax',secure:NODE_ENV==='production',path:'/',maxAge:7*24*3600*1000});res.json({user:{id:u.id,name:u.name,username:u.username,department_id:u.department_id}})});
+app.post('/api/login',loginGuard,(req,res)=>{const username=String(req.body.username||'').trim().toLowerCase();const password=String(req.body.password||'');const u=one('SELECT * FROM users WHERE username=? AND active=1',username);if(!u||!bcrypt.compareSync(password,u.password_hash)){req._loginState.n++;loginAttempts.set(req._loginKey,req._loginState);return res.status(401).json({error:'Invalid login'});}loginAttempts.delete(req._loginKey);const token=jwt.sign({id:u.id,name:u.name,username:u.username,department_id:u.department_id},EFFECTIVE_JWT_SECRET,{expiresIn:'7d'});res.cookie('bg_token',token,{httpOnly:true,sameSite:'lax',secure:NODE_ENV==='production',path:'/',maxAge:7*24*3600*1000});res.json({user:{id:u.id,name:u.name,username:u.username,department_id:u.department_id}})});
+  const username=String(req.body.username||'').trim().toLowerCase();
+  const password=String(req.body.password||'');
+  const u=one('SELECT * FROM users WHERE username=? AND active=1',username);
+  if(!u||!bcrypt.compareSync(password,u.password_hash)){
+    req._loginState.n++;
+    loginAttempts.set(req._loginKey,req._loginState);
+    return res.status(401).json({error:'Invalid login'});
+  }
+  loginAttempts.delete(req._loginKey);
+  const token=jwt.sign({id:u.id,name:u.name,username:u.username,department_id:u.department_id},EFFECTIVE_JWT_SECRET,{expiresIn:'7d'});
+  res.cookie('bg_token',token,{httpOnly:true,sameSite:'lax',secure:NODE_ENV==='production',path:'/',maxAge:7*24*3600*1000});
+  res.json({user:{id:u.id,name:u.name,username:u.username,department_id:u.department_id}});
+});
 app.post('/api/logout',(req,res)=>{res.clearCookie('bg_token',{httpOnly:true,sameSite:'lax',secure:NODE_ENV==='production'});res.json({ok:true})});
 app.get('/api/health',(req,res)=>res.json({ok:true,service:'THE BG WEB',environment:NODE_ENV}));
 app.get('/api/me',auth,(req,res)=>res.json({user:req.user,department:one('SELECT * FROM departments WHERE id=?',req.user.department_id)}));
