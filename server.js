@@ -45,7 +45,7 @@ app.post('/api/login',loginGuard,(req,res)=>{const username=String(req.body.user
   
     loginAttempts.set(req._loginKey,req._loginState);
     return res.status(401).json({error:'Invalid login'});
-  }
+  
   loginAttempts.delete(req._loginKey);
   const token=jwt.sign({id:u.id,name:u.name,username:u.username,department_id:u.department_id},EFFECTIVE_JWT_SECRET,{expiresIn:'7d'});
   res.cookie('bg_token',token,{httpOnly:true,sameSite:'lax',secure:NODE_ENV==='production',path:'/',maxAge:7*24*3600*1000});
