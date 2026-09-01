@@ -39,10 +39,10 @@ function d1(req){return req.user.department_id==='D1'}function log(req,action,ty
 function rows(sql,...p){return db.prepare(sql).all(...p)}function one(sql,...p){return db.prepare(sql).get(...p)}
 app.post('/api/login',loginGuard,(req,res)=>{const username=String(req.body.username||'').trim().toLowerCase();const password=String(req.body.password||'');const u=one('SELECT * FROM users WHERE username=? AND active=1',username);if(!u||!bcrypt.compareSync(password,u.password_hash)){req._loginState.n++;loginAttempts.set(req._loginKey,req._loginState);return res.status(401).json({error:'Invalid login'});}loginAttempts.delete(req._loginKey);const token=jwt.sign({id:u.id,name:u.name,username:u.username,department_id:u.department_id},EFFECTIVE_JWT_SECRET,{expiresIn:'7d'});res.cookie('bg_token',token,{httpOnly:true,sameSite:'lax',secure:NODE_ENV==='production',path:'/',maxAge:7*24*3600*1000});res.json({user:{id:u.id,name:u.name,username:u.username,department_id:u.department_id}})});
 
-  const password=String(req.body.password||'');
-  const u=one('SELECT * FROM users WHERE username=? AND active=1',username);
-  if(!u||!bcrypt.compareSync(password,u.password_hash)){
-    req._loginState.n++;
+  
+
+  
+  
     loginAttempts.set(req._loginKey,req._loginState);
     return res.status(401).json({error:'Invalid login'});
   }
