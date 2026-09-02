@@ -36,10 +36,16 @@ const DB_PATH =
   process.env.DATABASE_PATH ||
   path.join(ROOT, 'data', 'thebg.sqlite');
 
-const UPLOAD_DIR = path.join(ROOT, 'public', 'uploads');
+const UPLOAD_DIR =
+  path.join(ROOT, 'public', 'uploads');
 
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(path.dirname(DB_PATH), {
+  recursive: true
+});
+
+fs.mkdirSync(UPLOAD_DIR, {
+  recursive: true
+});
 
 const db = new Database(DB_PATH);
 
@@ -55,7 +61,9 @@ function one(sql, ...params) {
 }
 
 function oneCount() {
-  return db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+  return db
+    .prepare('SELECT COUNT(*) AS n FROM users')
+    .get().n;
 }
 
 /* =========================================================
@@ -313,12 +321,14 @@ departments.forEach((d) => upDept.run(...d));
 
 const userCount = oneCount();
 
-const initialPassword = process.env.INITIAL_ADMIN_PASSWORD;
+const initialPassword =
+  process.env.INITIAL_ADMIN_PASSWORD;
 
 if (userCount === 0) {
   if (
     NODE_ENV === 'production' &&
-    (!initialPassword || initialPassword.length < 10)
+    (!initialPassword ||
+      initialPassword.length < 10)
   ) {
     throw new Error(
       'First production startup requires INITIAL_ADMIN_PASSWORD of at least 10 characters.'
@@ -335,11 +345,9 @@ if (userCount === 0) {
   `);
 
   departments.forEach((d) => {
-    const username = d[0].toLowerCase();
-
     upUser.run(
       d[2],
-      username,
+      d[0].toLowerCase(),
       bcrypt.hashSync(seedPassword, 12),
       d[0]
     );
@@ -356,22 +364,35 @@ if (userCount === 0) {
    MIDDLEWARE
 ========================================================= */
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({
+  limit: '2mb'
+}));
+
 app.use(
   express.urlencoded({
     extended: true,
     limit: '2mb'
   })
 );
+
 app.use(cookieParser());
 
 app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader(
+    'X-Content-Type-Options',
+    'nosniff'
+  );
+
+  res.setHeader(
+    'X-Frame-Options',
+    'SAMEORIGIN'
+  );
+
   res.setHeader(
     'Referrer-Policy',
     'strict-origin-when-cross-origin'
   );
+
   res.setHeader(
     'Permissions-Policy',
     'camera=(), microphone=(), geolocation=()'
@@ -394,7 +415,10 @@ app.use((req, res, next) => {
 const loginAttempts = new Map();
 
 function loginGuard(req, res, next) {
-  const key = String(req.ip || 'unknown');
+  const key = String(
+    req.ip || 'unknown'
+  );
+
   const now = Date.now();
 
   let state =
@@ -403,7 +427,10 @@ function loginGuard(req, res, next) {
       t: now
     };
 
-  if (now - state.t > 15 * 60 * 1000) {
+  if (
+    now - state.t >
+    15 * 60 * 1000
+  ) {
     state = {
       n: 0,
       t: now
@@ -412,7 +439,8 @@ function loginGuard(req, res, next) {
 
   if (state.n >= 10) {
     return res.status(429).json({
-      error: 'Too many login attempts. Try again later.'
+      error:
+        'Too many login attempts. Try again later.'
     });
   }
 
@@ -444,7 +472,9 @@ const upload = multer({
 
     filename: (req, file, cb) => {
       const safeExt =
-        path.extname(file.originalname).toLowerCase();
+        path.extname(
+          file.originalname
+        ).toLowerCase();
 
       cb(
         null,
@@ -456,9 +486,13 @@ const upload = multer({
   }),
 
   fileFilter: (req, file, cb) => {
-    if (!allowedMime.has(file.mimetype)) {
+    if (!allowedMime.has(
+      file.mimetype
+    )) {
       return cb(
-        new Error('File type is not allowed.')
+        new Error(
+          'File type is not allowed.'
+        )
       );
     }
 
@@ -476,7 +510,8 @@ const upload = multer({
 
 function auth(req, res, next) {
   try {
-    const token = req.cookies.bg_token;
+    const token =
+      req.cookies.bg_token;
 
     if (!token) {
       throw new Error('No token');
@@ -487,6 +522,37 @@ function auth(req, res, next) {
       EFFECTIVE_JWT_SECRET
     );
 
+    const currentUser = one(
+      `
+      SELECT
+        id,
+        name,
+        username,
+        department_id,
+        active
+      FROM users
+      WHERE id=?
+      `,
+      req.user.id
+    );
+
+    if (
+      !currentUser ||
+      !currentUser.active
+    ) {
+      throw new Error(
+        'Account inactive'
+      );
+    }
+
+    req.user = {
+      id: currentUser.id,
+      name: currentUser.name,
+      username: currentUser.username,
+      department_id:
+        currentUser.department_id
+    };
+
     next();
   } catch (error) {
     return res.status(401).json({
@@ -496,25 +562,94 @@ function auth(req, res, next) {
 }
 
 function d1(req) {
-  return req.user.department_id === 'D1';
+  return (
+    req.user.department_id === 'D1'
+  );
 }
 
-function deptOnly(req, ids) {
+function hasDept(req, departments) {
+  return departments.includes(
+    req.user.department_id
+  );
+}
+
+function deptOnly(req, departments) {
   return (
     d1(req) ||
-    ids.includes(req.user.department_id)
+    hasDept(req, departments)
   );
 }
 
 function sameDept(req, userId) {
+  const numericId =
+    Number(userId);
+
+  if (!Number.isInteger(numericId)) {
+    return false;
+  }
+
   const u = one(
-    'SELECT department_id FROM users WHERE id=?',
-    userId
+    `
+    SELECT
+      id,
+      department_id,
+      active
+    FROM users
+    WHERE id=?
+    `,
+    numericId
   );
 
-  return (
-    d1(req) ||
-    u?.department_id === req.user.department_id
+  return Boolean(
+    u &&
+    u.active &&
+    (
+      d1(req) ||
+      u.department_id ===
+        req.user.department_id
+    )
+  );
+}
+
+function userExists(userId) {
+  const id = Number(userId);
+
+  if (!Number.isInteger(id)) {
+    return null;
+  }
+
+  return one(
+    `
+    SELECT
+      id,
+      name,
+      username,
+      department_id,
+      active
+    FROM users
+    WHERE id=?
+    `,
+    id
+  );
+}
+
+function motorcycleExists(
+  motorcycleId
+) {
+  const id =
+    Number(motorcycleId);
+
+  if (!Number.isInteger(id)) {
+    return null;
+  }
+
+  return one(
+    `
+    SELECT *
+    FROM motorcycles
+    WHERE id=?
+    `,
+    id
   );
 }
 
@@ -562,18 +697,25 @@ app.post(
   '/api/login',
   loginGuard,
   (req, res) => {
-    const username = String(
-      req.body.username || ''
-    )
-      .trim()
-      .toLowerCase();
+    const username =
+      String(
+        req.body.username || ''
+      )
+        .trim()
+        .toLowerCase();
 
-    const password = String(
-      req.body.password || ''
-    );
+    const password =
+      String(
+        req.body.password || ''
+      );
 
     const u = one(
-      'SELECT * FROM users WHERE username=? AND active=1',
+      `
+      SELECT *
+      FROM users
+      WHERE username=?
+        AND active=1
+      `,
       username
     );
 
@@ -596,14 +738,17 @@ app.post(
       });
     }
 
-    loginAttempts.delete(req._loginKey);
+    loginAttempts.delete(
+      req._loginKey
+    );
 
     const token = jwt.sign(
       {
         id: u.id,
         name: u.name,
         username: u.username,
-        department_id: u.department_id
+        department_id:
+          u.department_id
       },
       EFFECTIVE_JWT_SECRET,
       {
@@ -617,9 +762,11 @@ app.post(
       {
         httpOnly: true,
         sameSite: 'lax',
-        secure: NODE_ENV === 'production',
+        secure:
+          NODE_ENV === 'production',
         path: '/',
-        maxAge: 7 * 24 * 60 * 60 * 1000
+        maxAge:
+          7 * 24 * 60 * 60 * 1000
       }
     );
 
@@ -628,7 +775,8 @@ app.post(
         id: u.id,
         name: u.name,
         username: u.username,
-        department_id: u.department_id
+        department_id:
+          u.department_id
       }
     });
   }
@@ -646,12 +794,15 @@ app.post(
       {
         httpOnly: true,
         sameSite: 'lax',
-        secure: NODE_ENV === 'production',
+        secure:
+          NODE_ENV === 'production',
         path: '/'
       }
     );
 
-    res.json({ ok: true });
+    res.json({
+      ok: true
+    });
   }
 );
 
@@ -672,8 +823,13 @@ app.get(
   (req, res) => {
     res.json({
       user: req.user,
+
       department: one(
-        'SELECT * FROM departments WHERE id=?',
+        `
+        SELECT *
+        FROM departments
+        WHERE id=?
+        `,
         req.user.department_id
       )
     });
@@ -682,113 +838,337 @@ app.get(
 
 /* =========================================================
    BOOTSTRAP
+   IMPORTANT:
+   Department filtering happens HERE.
 ========================================================= */
 
 app.get(
   '/api/bootstrap',
   auth,
   (req, res) => {
-    const users = rows(`
-      SELECT
-        id,
-        name,
-        username,
-        department_id,
-        active
-      FROM users
-    `);
+    try {
+      const dept =
+        req.user.department_id;
 
-    res.json({
-      departments: rows(
-        'SELECT * FROM departments'
-      ),
+      const isD1 = dept === 'D1';
+      const isD2 = dept === 'D2';
+      const isD3 = dept === 'D3';
+      const isD4 = dept === 'D4';
+      const isD5 = dept === 'D5';
 
-      users,
+      /* ---------------------------------------------------
+         USERS
+      --------------------------------------------------- */
 
-      motorcycles: rows(`
-        SELECT *
-        FROM motorcycles
-        ORDER BY id DESC
-      `),
+      const users = isD1
+        ? rows(`
+            SELECT
+              id,
+              name,
+              username,
+              department_id,
+              active
+            FROM users
+            ORDER BY id
+          `)
+        : rows(`
+            SELECT
+              id,
+              name,
+              username,
+              department_id,
+              active
+            FROM users
+            WHERE department_id=?
+               OR id=?
+            ORDER BY id
+          `,
+          dept,
+          req.user.id
+        );
 
-      tasks: rows(`
-        SELECT
-          t.*,
-          u.name AS responsible_name
-        FROM tasks t
-        JOIN users u
-          ON u.id=t.responsible_user
-        ORDER BY t.id DESC
-      `),
+      /* ---------------------------------------------------
+         TASKS
+      --------------------------------------------------- */
 
-      reports: rows(`
-        SELECT
-          r.*,
-          u.name AS user_name
-        FROM reports r
-        JOIN users u
-          ON u.id=r.user_id
-        ORDER BY r.id DESC
-      `),
+      const tasks = isD1
+        ? rows(`
+            SELECT
+              t.*,
+              u.name AS responsible_name,
+              u.department_id AS responsible_department
+            FROM tasks t
+            JOIN users u
+              ON u.id=t.responsible_user
+            ORDER BY t.id DESC
+          `)
+        : rows(`
+            SELECT
+              t.*,
+              u.name AS responsible_name,
+              u.department_id AS responsible_department
+            FROM tasks t
+            JOIN users u
+              ON u.id=t.responsible_user
+            WHERE u.department_id=?
+               OR t.created_by=?
+            ORDER BY t.id DESC
+          `,
+          dept,
+          req.user.id
+        );
 
-      income: rows(`
-        SELECT
-          i.*,
-          m.code AS motorcycle_code,
-          u.name AS entered_name
-        FROM income i
-        JOIN motorcycles m
-          ON m.id=i.motorcycle_id
-        JOIN users u
-          ON u.id=i.entered_by
-        ORDER BY i.date DESC, i.id DESC
-      `),
+      /* ---------------------------------------------------
+         REPORTS
+      --------------------------------------------------- */
 
-      expenses: rows(`
-        SELECT
-          e.*,
-          m.code AS motorcycle_code,
-          u.name AS entered_name
-        FROM expenses e
-        LEFT JOIN motorcycles m
-          ON m.id=e.motorcycle_id
-        JOIN users u
-          ON u.id=e.entered_by
-        ORDER BY e.date DESC, e.id DESC
-      `),
+      const reports = isD1
+        ? rows(`
+            SELECT
+              r.*,
+              u.name AS user_name,
+              u.department_id
+                AS user_department
+            FROM reports r
+            JOIN users u
+              ON u.id=r.user_id
+            ORDER BY r.id DESC
+          `)
+        : rows(`
+            SELECT
+              r.*,
+              u.name AS user_name,
+              u.department_id
+                AS user_department
+            FROM reports r
+            JOIN users u
+              ON u.id=r.user_id
+            WHERE u.department_id=?
+               OR r.user_id=?
+            ORDER BY r.id DESC
+          `,
+          dept,
+          req.user.id
+        );
 
-      maintenance: rows(`
-        SELECT
-          m.*,
-          x.code AS motorcycle_code
-        FROM maintenance m
-        JOIN motorcycles x
-          ON x.id=m.motorcycle_id
-        ORDER BY m.date DESC
-      `),
+      /* ---------------------------------------------------
+         MOTORCYCLES
+         D1 / D3 / D4 may see fleet asset information.
+         D2 / D5 do not receive private fleet records.
+      --------------------------------------------------- */
 
-      audit: rows(`
-        SELECT
-          a.*,
-          u.name AS user_name
-        FROM audit a
-        LEFT JOIN users u
-          ON u.id=a.who_user
-        ORDER BY a.id DESC
-        LIMIT 1000
-      `),
+      const motorcycles =
+        isD1 || isD3 || isD4
+          ? rows(`
+              SELECT *
+              FROM motorcycles
+              ORDER BY id DESC
+            `)
+          : [];
 
-      changes: rows(`
-        SELECT
-          f.*,
-          u.name AS requested_name
-        FROM finance_changes f
-        JOIN users u
-          ON u.id=f.requested_by
-        WHERE f.status='Pending Approval'
-        ORDER BY f.id DESC
-      `)
-    });
+      /* ---------------------------------------------------
+         INCOME
+         D1 + D3 full financial view.
+         D4 operations view.
+      --------------------------------------------------- */
+
+      const income =
+        isD1 || isD3
+          ? rows(`
+              SELECT
+                i.*,
+                m.code AS motorcycle_code,
+                u.name AS entered_name,
+                u.department_id AS entered_department
+              FROM income i
+              JOIN motorcycles m
+                ON m.id=i.motorcycle_id
+              JOIN users u
+                ON u.id=i.entered_by
+              ORDER BY i.date DESC, i.id DESC
+            `)
+          : isD4
+            ? rows(`
+                SELECT
+                  i.*,
+                  m.code AS motorcycle_code,
+                  u.name AS entered_name,
+                  u.department_id AS entered_department
+                FROM income i
+                JOIN motorcycles m
+                  ON m.id=i.motorcycle_id
+                JOIN users u
+                  ON u.id=i.entered_by
+                WHERE i.entered_by=?
+                   OR u.department_id='D4'
+                ORDER BY i.date DESC, i.id DESC
+              `,
+              req.user.id)
+            : [];
+
+      /* ---------------------------------------------------
+         EXPENSES
+      --------------------------------------------------- */
+
+      const expenses =
+        isD1 || isD3
+          ? rows(`
+              SELECT
+                e.*,
+                m.code AS motorcycle_code,
+                u.name AS entered_name,
+                u.department_id AS entered_department
+              FROM expenses e
+              LEFT JOIN motorcycles m
+                ON m.id=e.motorcycle_id
+              JOIN users u
+                ON u.id=e.entered_by
+              ORDER BY e.date DESC, e.id DESC
+            `)
+          : isD4
+            ? rows(`
+                SELECT
+                  e.*,
+                  m.code AS motorcycle_code,
+                  u.name AS entered_name,
+                  u.department_id AS entered_department
+                FROM expenses e
+                LEFT JOIN motorcycles m
+                  ON m.id=e.motorcycle_id
+                JOIN users u
+                  ON u.id=e.entered_by
+                WHERE e.entered_by=?
+                   OR u.department_id='D4'
+                ORDER BY e.date DESC, e.id DESC
+              `,
+              req.user.id)
+            : [];
+
+      /* ---------------------------------------------------
+         MAINTENANCE
+      --------------------------------------------------- */
+
+      const maintenance =
+        isD1 || isD3 || isD4
+          ? rows(`
+              SELECT
+                m.*,
+                x.code AS motorcycle_code
+              FROM maintenance m
+              JOIN motorcycles x
+                ON x.id=m.motorcycle_id
+              ORDER BY
+                m.date DESC,
+                m.id DESC
+            `)
+          : [];
+
+      /* ---------------------------------------------------
+         AUDIT
+      --------------------------------------------------- */
+
+      const audit =
+        isD1
+          ? rows(`
+              SELECT
+                a.*,
+                u.name AS user_name,
+                u.department_id
+                  AS user_department
+              FROM audit a
+              LEFT JOIN users u
+                ON u.id=a.who_user
+              ORDER BY a.id DESC
+              LIMIT 1000
+            `)
+          : rows(`
+              SELECT
+                a.*,
+                u.name AS user_name,
+                u.department_id
+                  AS user_department
+              FROM audit a
+              LEFT JOIN users u
+                ON u.id=a.who_user
+              WHERE a.who_user=?
+                 OR u.department_id=?
+              ORDER BY a.id DESC
+              LIMIT 500
+            `,
+            req.user.id,
+            dept
+          );
+
+      /* ---------------------------------------------------
+         FINANCE CHANGES
+      --------------------------------------------------- */
+
+      const changes =
+        isD1 || isD3 || isD4
+          ? rows(`
+              SELECT
+                f.*,
+                u.name AS requested_name,
+                u.department_id
+                  AS requested_department
+              FROM finance_changes f
+              JOIN users u
+                ON u.id=f.requested_by
+              WHERE
+                f.status='Pending Approval'
+                AND (
+                  ?='D1'
+                  OR u.department_id=?
+                  OR f.requested_by=?
+                )
+              ORDER BY f.id DESC
+            `,
+            dept,
+            dept,
+            req.user.id)
+          : [];
+
+      res.json({
+        departments: rows(
+          'SELECT * FROM departments'
+        ),
+
+        users,
+
+        motorcycles,
+
+        tasks,
+
+        reports,
+
+        income,
+
+        expenses,
+
+        maintenance,
+
+        audit,
+
+        changes
+      });
+    } catch (error) {
+      console.error(
+        'BOOTSTRAP ERROR:',
+        error
+      );
+
+      /*
+       * IMPORTANT:
+       * Always return valid JSON instead of allowing
+       * the frontend to receive an HTML/empty response.
+       */
+      return res.status(500).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to load dashboard data.'
+            : `Bootstrap failed: ${error.message}`
+      });
+    }
   }
 );
 
@@ -800,49 +1180,116 @@ app.post(
   '/api/motorcycles',
   auth,
   (req, res) => {
-    if (!['D1', 'D4'].includes(
-      req.user.department_id
-    )) {
+    if (
+      !deptOnly(req, ['D4'])
+    ) {
       return res.status(403).json({
-        error: 'D4 Operations or D1 only'
+        error:
+          'Only D4 Operations or D1 can register motorcycles.'
       });
     }
 
-    const {
-      code,
-      plate,
-      model,
-      purchase_date,
-      purchase_price,
-      status = 'Active'
-    } = req.body;
+    const code =
+      String(
+        req.body.code || ''
+      ).trim();
+
+    const plate =
+      String(
+        req.body.plate || ''
+      ).trim();
+
+    const model =
+      String(
+        req.body.model || ''
+      ).trim();
+
+    const purchaseDate =
+      req.body.purchase_date
+        ? String(
+            req.body.purchase_date
+          )
+        : null;
+
+    const purchasePrice =
+      Number(
+        req.body.purchase_price || 0
+      );
+
+    const status =
+      String(
+        req.body.status ||
+          'Active'
+      );
+
+    const allowedStatuses = [
+      'Active',
+      'Inactive',
+      'Under Maintenance',
+      'Sold / Retired'
+    ];
 
     if (!code) {
       return res.status(400).json({
-        error: 'Motorcycle code required'
+        error:
+          'Motorcycle code is required.'
+      });
+    }
+
+    if (
+      !Number.isFinite(
+        purchasePrice
+      ) ||
+      purchasePrice < 0
+    ) {
+      return res.status(400).json({
+        error:
+          'Purchase price must be a valid non-negative number.'
+      });
+    }
+
+    if (
+      !allowedStatuses.includes(
+        status
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          'Invalid motorcycle status.'
       });
     }
 
     try {
-      const result = db.prepare(`
-        INSERT INTO motorcycles
-        (
+      const result =
+        db.prepare(`
+          INSERT INTO motorcycles
+          (
+            code,
+            plate,
+            model,
+            purchase_date,
+            purchase_price,
+            status
+          )
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
           code,
           plate,
           model,
-          purchase_date,
-          purchase_price,
+          purchaseDate,
+          purchasePrice,
           status
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(
-        String(code).trim(),
-        plate || '',
-        model || '',
-        purchase_date || null,
-        Number(purchase_price || 0),
-        status
-      );
+        );
+
+      const motorcycle =
+        one(
+          `
+          SELECT *
+          FROM motorcycles
+          WHERE id=?
+          `,
+          result.lastInsertRowid
+        );
 
       log(
         req,
@@ -850,16 +1297,39 @@ app.post(
         'Motorcycle',
         result.lastInsertRowid,
         null,
-        req.body
+        motorcycle
       );
 
-      res.json({
+      return res.status(201).json({
         ok: true,
-        id: result.lastInsertRowid
+        id:
+          result.lastInsertRowid,
+        motorcycle
       });
     } catch (error) {
-      res.status(400).json({
-        error: error.message
+      console.error(
+        'MOTORCYCLE CREATE ERROR:',
+        error
+      );
+
+      if (
+        String(
+          error.message || ''
+        ).includes(
+          'UNIQUE constraint failed'
+        )
+      ) {
+        return res.status(409).json({
+          error:
+            'A motorcycle with this code already exists.'
+        });
+      }
+
+      return res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to register motorcycle.'
+            : error.message
       });
     }
   }
@@ -873,20 +1343,24 @@ app.post(
   '/api/motorcycles/:id/status',
   auth,
   (req, res) => {
-    if (!deptOnly(req, ['D4'])) {
+    if (
+      !deptOnly(req, ['D4'])
+    ) {
       return res.status(403).json({
-        error: 'D4 Operations or D1 only'
+        error:
+          'Only D4 Operations or D1 can change motorcycle status.'
       });
     }
 
-    const motorcycle = one(
-      'SELECT * FROM motorcycles WHERE id=?',
-      req.params.id
-    );
+    const motorcycle =
+      motorcycleExists(
+        req.params.id
+      );
 
     if (!motorcycle) {
       return res.status(404).json({
-        error: 'Motorcycle not found'
+        error:
+          'Motorcycle not found.'
       });
     }
 
@@ -897,11 +1371,22 @@ app.post(
       'Sold / Retired'
     ];
 
-    if (!allowed.includes(req.body.status)) {
+    if (
+      !allowed.includes(
+        req.body.status
+      )
+    ) {
       return res.status(400).json({
-        error: 'Invalid status'
+        error:
+          'Invalid status.'
       });
     }
+
+    const changed = {
+      ...motorcycle,
+      status:
+        req.body.status
+    };
 
     db.prepare(`
       UPDATE motorcycles
@@ -918,14 +1403,14 @@ app.post(
       'Motorcycle',
       motorcycle.id,
       motorcycle,
-      {
-        ...motorcycle,
-        status: req.body.status
-      },
+      changed,
       req.body.reason || ''
     );
 
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+      motorcycle: changed
+    });
   }
 );
 
@@ -937,75 +1422,118 @@ app.post(
   '/api/income',
   auth,
   (req, res) => {
-    if (!['D1', 'D4'].includes(
-      req.user.department_id
-    )) {
+    if (
+      !deptOnly(req, ['D4'])
+    ) {
       return res.status(403).json({
         error:
-          'Daily motorcycle income is entered by D4 Operations.'
+          'Only D4 Operations or D1 can enter daily motorcycle income.'
       });
     }
 
-    const {
-      date,
-      motorcycle_id,
-      amount,
-      collection_note = ''
-    } = req.body;
+    const date =
+      String(
+        req.body.date || ''
+      ).trim();
+
+    const motorcycleId =
+      Number(
+        req.body.motorcycle_id
+      );
+
+    const amount =
+      Number(
+        req.body.amount
+      );
+
+    const collectionNote =
+      String(
+        req.body.collection_note ||
+          ''
+      );
 
     if (
       !date ||
-      !motorcycle_id ||
-      Number(amount) < 0
+      !Number.isInteger(
+        motorcycleId
+      ) ||
+      !Number.isFinite(
+        amount
+      ) ||
+      amount < 0
     ) {
       return res.status(400).json({
         error:
-          'Date, motorcycle and valid amount required'
+          'Date, motorcycle and valid amount are required.'
       });
     }
 
-    const motorcycle = one(
-      'SELECT id FROM motorcycles WHERE id=?',
-      motorcycle_id
-    );
+    const motorcycle =
+      motorcycleExists(
+        motorcycleId
+      );
 
     if (!motorcycle) {
       return res.status(400).json({
-        error: 'Motorcycle not found'
+        error:
+          'Motorcycle not found.'
       });
     }
 
-    const result = db.prepare(`
-      INSERT INTO income
-      (
-        date,
-        motorcycle_id,
-        amount,
-        collection_note,
-        entered_by
-      )
-      VALUES (?, ?, ?, ?, ?)
-    `).run(
-      date,
-      motorcycle_id,
-      Number(amount),
-      collection_note,
-      req.user.id
-    );
+    try {
+      const result =
+        db.prepare(`
+          INSERT INTO income
+          (
+            date,
+            motorcycle_id,
+            amount,
+            collection_note,
+            entered_by
+          )
+          VALUES (?, ?, ?, ?, ?)
+        `).run(
+          date,
+          motorcycleId,
+          amount,
+          collectionNote,
+          req.user.id
+        );
 
-    log(
-      req,
-      'CREATE',
-      'Fleet Income',
-      result.lastInsertRowid,
-      null,
-      req.body
-    );
+      log(
+        req,
+        'CREATE',
+        'Fleet Income',
+        result.lastInsertRowid,
+        null,
+        {
+          date,
+          motorcycle_id:
+            motorcycleId,
+          amount,
+          collection_note:
+            collectionNote
+        }
+      );
 
-    res.json({
-      ok: true,
-      id: result.lastInsertRowid
-    });
+      res.status(201).json({
+        ok: true,
+        id:
+          result.lastInsertRowid
+      });
+    } catch (error) {
+      console.error(
+        'INCOME ERROR:',
+        error
+      );
+
+      res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to save income.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -1017,23 +1545,25 @@ app.post(
   '/api/income/:id/verify',
   auth,
   (req, res) => {
-    if (!['D1', 'D3'].includes(
-      req.user.department_id
-    )) {
+    if (
+      !deptOnly(req, ['D3'])
+    ) {
       return res.status(403).json({
         error:
-          'Only D3 Finance or D1 can verify income'
+          'Only D3 Finance or D1 can verify income.'
       });
     }
 
-    const income = one(
-      'SELECT * FROM income WHERE id=?',
-      req.params.id
-    );
+    const income =
+      one(
+        'SELECT * FROM income WHERE id=?',
+        req.params.id
+      );
 
     if (!income) {
       return res.status(404).json({
-        error: 'Income record not found'
+        error:
+          'Income record not found.'
       });
     }
 
@@ -1056,7 +1586,9 @@ app.post(
       req.body.reason || ''
     );
 
-    res.json({ ok: true });
+    res.json({
+      ok: true
+    });
   }
 );
 
@@ -1068,79 +1600,139 @@ app.post(
   '/api/expenses',
   auth,
   (req, res) => {
-    const {
-      date,
-      motorcycle_id,
-      expense_type,
-      amount,
-      description = ''
-    } = req.body;
-
     if (
-      !date ||
-      !expense_type ||
-      Number(amount) <= 0
+      !deptOnly(req, ['D3', 'D4'])
     ) {
-      return res.status(400).json({
-        error: 'Valid expense required'
+      return res.status(403).json({
+        error:
+          'Only D3 Finance, D4 Operations or D1 can enter expenses.'
       });
     }
 
-    if (motorcycle_id) {
-      const motorcycle = one(
-        'SELECT id FROM motorcycles WHERE id=?',
-        motorcycle_id
+    const date =
+      String(
+        req.body.date || ''
+      ).trim();
+
+    const expenseType =
+      String(
+        req.body.expense_type ||
+          ''
+      ).trim();
+
+    const amount =
+      Number(
+        req.body.amount
       );
 
-      if (!motorcycle) {
-        return res.status(400).json({
-          error: 'Motorcycle not found'
-        });
-      }
+    const description =
+      String(
+        req.body.description ||
+          ''
+      );
+
+    const motorcycleId =
+      req.body.motorcycle_id
+        ? Number(
+            req.body.motorcycle_id
+          )
+        : null;
+
+    if (
+      !date ||
+      !expenseType ||
+      !Number.isFinite(
+        amount
+      ) ||
+      amount <= 0
+    ) {
+      return res.status(400).json({
+        error:
+          'Valid expense data is required.'
+      });
     }
 
-    const original = {
-      date,
-      motorcycle_id:
-        motorcycle_id || null,
-      expense_type,
-      amount: Number(amount),
-      description
-    };
-
-    const result = db.prepare(`
-      INSERT INTO expenses
-      (
-        date,
-        motorcycle_id,
-        expense_type,
-        amount,
-        description,
-        entered_by
+    if (
+      motorcycleId !== null &&
+      !Number.isInteger(
+        motorcycleId
       )
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      date,
-      motorcycle_id || null,
-      expense_type,
-      Number(amount),
-      description,
-      req.user.id
-    );
+    ) {
+      return res.status(400).json({
+        error:
+          'Invalid motorcycle.'
+      });
+    }
 
-    log(
-      req,
-      'CREATE',
-      'Expense',
-      result.lastInsertRowid,
-      null,
-      original
-    );
+    if (
+      motorcycleId !== null &&
+      !motorcycleExists(
+        motorcycleId
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          'Motorcycle not found.'
+      });
+    }
 
-    res.json({
-      ok: true,
-      id: result.lastInsertRowid
-    });
+    try {
+      const result =
+        db.prepare(`
+          INSERT INTO expenses
+          (
+            date,
+            motorcycle_id,
+            expense_type,
+            amount,
+            description,
+            entered_by
+          )
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
+          date,
+          motorcycleId,
+          expenseType,
+          amount,
+          description,
+          req.user.id
+        );
+
+      log(
+        req,
+        'CREATE',
+        'Expense',
+        result.lastInsertRowid,
+        null,
+        {
+          date,
+          motorcycle_id:
+            motorcycleId,
+          expense_type:
+            expenseType,
+          amount,
+          description
+        }
+      );
+
+      res.status(201).json({
+        ok: true,
+        id:
+          result.lastInsertRowid
+      });
+    } catch (error) {
+      console.error(
+        'EXPENSE ERROR:',
+        error
+      );
+
+      res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to save expense.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -1152,67 +1744,168 @@ app.post(
   '/api/tasks',
   auth,
   (req, res) => {
-    const {
-      name,
-      responsible_user,
-      start_date,
-      deadline,
-      priority = 'Normal',
-      description = ''
-    } = req.body;
+    const name =
+      String(
+        req.body.name || ''
+      ).trim();
 
-    if (!name || !responsible_user) {
+    const responsibleUser =
+      Number(
+        req.body.responsible_user
+      );
+
+    const startDate =
+      req.body.start_date
+        ? String(
+            req.body.start_date
+          )
+        : null;
+
+    const deadline =
+      req.body.deadline
+        ? String(
+            req.body.deadline
+          )
+        : null;
+
+    const priority =
+      String(
+        req.body.priority ||
+          'Normal'
+      );
+
+    const description =
+      String(
+        req.body.description ||
+          ''
+      );
+
+    if (
+      !name ||
+      !Number.isInteger(
+        responsibleUser
+      )
+    ) {
       return res.status(400).json({
         error:
-          'Task and responsible person required'
+          'Task name and a valid responsible person are required.'
       });
     }
 
+    const responsible =
+      userExists(
+        responsibleUser
+      );
+
     if (
-      !sameDept(req, responsible_user) &&
-      !d1(req)
+      !responsible ||
+      !responsible.active
+    ) {
+      return res.status(400).json({
+        error:
+          'Responsible user was not found or is inactive.'
+      });
+    }
+
+    /*
+     * D1 can assign across departments.
+     * Everyone else can assign only inside their department.
+     */
+    if (
+      !d1(req) &&
+      responsible.department_id !==
+        req.user.department_id
     ) {
       return res.status(403).json({
         error:
-          'You can assign tasks only within your department unless you are D1'
+          'You can assign tasks only within your department.'
       });
     }
 
-    const result = db.prepare(`
-      INSERT INTO tasks
-      (
-        name,
-        responsible_user,
-        start_date,
-        deadline,
-        priority,
-        description,
-        created_by
+    const allowedPriorities = [
+      'Low',
+      'Normal',
+      'High',
+      'Urgent'
+    ];
+
+    const finalPriority =
+      allowedPriorities.includes(
+        priority
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      name,
-      responsible_user,
-      start_date || null,
-      deadline || null,
-      priority,
-      description,
-      req.user.id
-    );
+        ? priority
+        : 'Normal';
 
-    log(
-      req,
-      'CREATE',
-      'Task',
-      result.lastInsertRowid,
-      null,
-      req.body
-    );
+    try {
+      const result =
+        db.prepare(`
+          INSERT INTO tasks
+          (
+            name,
+            responsible_user,
+            start_date,
+            deadline,
+            priority,
+            description,
+            status,
+            created_by
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          name,
+          responsibleUser,
+          startDate,
+          deadline,
+          finalPriority,
+          description,
+          'Not Started',
+          req.user.id
+        );
 
-    res.json({
-      ok: true,
-      id: result.lastInsertRowid
-    });
+      const task =
+        one(
+          `
+          SELECT
+            t.*,
+            u.name AS responsible_name,
+            u.department_id
+              AS responsible_department
+          FROM tasks t
+          JOIN users u
+            ON u.id=t.responsible_user
+          WHERE t.id=?
+          `,
+          result.lastInsertRowid
+        );
+
+      log(
+        req,
+        'CREATE',
+        'Task',
+        result.lastInsertRowid,
+        null,
+        task
+      );
+
+      return res.status(201).json({
+        ok: true,
+        id:
+          result.lastInsertRowid,
+        task
+      });
+    } catch (error) {
+      console.error(
+        'TASK CREATE ERROR:',
+        error
+      );
+
+      return res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to create task.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -1220,28 +1913,57 @@ app.patch(
   '/api/tasks/:id',
   auth,
   (req, res) => {
-    const task = one(
-      'SELECT * FROM tasks WHERE id=?',
-      req.params.id
-    );
+    const task =
+      one(
+        'SELECT * FROM tasks WHERE id=?',
+        req.params.id
+      );
 
     if (!task) {
       return res.status(404).json({
-        error: 'Task not found'
+        error:
+          'Task not found.'
       });
     }
 
-    if (
-      !d1(req) &&
-      task.responsible_user !== req.user.id
-    ) {
+    const responsible =
+      userExists(
+        task.responsible_user
+      );
+
+    const createdBy =
+      userExists(
+        task.created_by
+      );
+
+    /*
+     * D1: everything.
+     * Responsible person: can update own task.
+     * Creator: can update task they created.
+     * Same department can access department task.
+     */
+    const allowed =
+      d1(req) ||
+      task.responsible_user ===
+        req.user.id ||
+      task.created_by ===
+        req.user.id ||
+      (
+        responsible &&
+        responsible.department_id ===
+          req.user.department_id
+      );
+
+    if (!allowed) {
       return res.status(403).json({
-        error: 'Not permitted'
+        error:
+          'You are not permitted to update this task.'
       });
     }
 
     const status =
-      req.body.status || task.status;
+      req.body.status ||
+      task.status;
 
     const allowedStatuses = [
       'Not Started',
@@ -1251,31 +1973,59 @@ app.patch(
       'On Hold'
     ];
 
-    if (!allowedStatuses.includes(status)) {
+    if (
+      !allowedStatuses.includes(
+        status
+      )
+    ) {
       return res.status(400).json({
-        error: 'Invalid task status'
+        error:
+          'Invalid task status.'
       });
     }
 
-    db.prepare(`
-      UPDATE tasks
-      SET status=?
-      WHERE id=?
-    `).run(status, task.id);
+    try {
+      db.prepare(`
+        UPDATE tasks
+        SET status=?
+        WHERE id=?
+      `).run(
+        status,
+        task.id
+      );
 
-    log(
-      req,
-      'CHANGE',
-      'Task',
-      task.id,
-      task,
-      {
-        ...task,
-        status
-      }
-    );
+      log(
+        req,
+        'CHANGE',
+        'Task',
+        task.id,
+        task,
+        {
+          ...task,
+          status
+        }
+      );
 
-    res.json({ ok: true });
+      res.json({
+        ok: true,
+        task: {
+          ...task,
+          status
+        }
+      });
+    } catch (error) {
+      console.error(
+        'TASK UPDATE ERROR:',
+        error
+      );
+
+      res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to update task.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -1287,51 +2037,80 @@ app.post(
   '/api/reports',
   auth,
   (req, res) => {
-    const {
-      type,
-      body,
-      date
-    } = req.body;
+    const type =
+      String(
+        req.body.type || ''
+      ).trim();
+
+    const body =
+      String(
+        req.body.body || ''
+      ).trim();
+
+    const date =
+      String(
+        req.body.date ||
+          new Date()
+            .toISOString()
+            .slice(0, 10)
+      );
 
     if (!type || !body) {
       return res.status(400).json({
         error:
-          'Report type and body required'
+          'Report type and body are required.'
       });
     }
 
-    const result = db.prepare(`
-      INSERT INTO reports
-      (
-        type,
-        body,
-        user_id,
-        date
-      )
-      VALUES (?, ?, ?, ?)
-    `).run(
-      type,
-      body,
-      req.user.id,
-      date ||
-        new Date()
-          .toISOString()
-          .slice(0, 10)
-    );
+    try {
+      const result =
+        db.prepare(`
+          INSERT INTO reports
+          (
+            type,
+            body,
+            user_id,
+            date
+          )
+          VALUES (?, ?, ?, ?)
+        `).run(
+          type,
+          body,
+          req.user.id,
+          date
+        );
 
-    log(
-      req,
-      'CREATE',
-      'Report',
-      result.lastInsertRowid,
-      null,
-      req.body
-    );
+      log(
+        req,
+        'CREATE',
+        'Report',
+        result.lastInsertRowid,
+        null,
+        {
+          type,
+          body,
+          date
+        }
+      );
 
-    res.json({
-      ok: true,
-      id: result.lastInsertRowid
-    });
+      res.status(201).json({
+        ok: true,
+        id:
+          result.lastInsertRowid
+      });
+    } catch (error) {
+      console.error(
+        'REPORT ERROR:',
+        error
+      );
+
+      res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to save report.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -1343,50 +2122,63 @@ app.post(
   '/api/activities',
   auth,
   (req, res) => {
-    const {
-      date,
-      done,
-      unfinished,
-      reason,
-      time_spent
-    } = req.body;
-
-    const result = db.prepare(`
-      INSERT INTO activities
-      (
-        user_id,
-        date,
-        done,
-        unfinished,
-        reason,
-        time_spent
-      )
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      req.user.id,
-      date ||
+    try {
+      const date =
+        req.body.date ||
         new Date()
           .toISOString()
-          .slice(0, 10),
-      done || '',
-      unfinished || '',
-      reason || '',
-      Number(time_spent || 0)
-    );
+          .slice(0, 10);
 
-    log(
-      req,
-      'CREATE',
-      'Daily Activity',
-      result.lastInsertRowid,
-      null,
-      req.body
-    );
+      const result =
+        db.prepare(`
+          INSERT INTO activities
+          (
+            user_id,
+            date,
+            done,
+            unfinished,
+            reason,
+            time_spent
+          )
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
+          req.user.id,
+          date,
+          req.body.done || '',
+          req.body.unfinished || '',
+          req.body.reason || '',
+          Number(
+            req.body.time_spent || 0
+          )
+        );
 
-    res.json({
-      ok: true,
-      id: result.lastInsertRowid
-    });
+      log(
+        req,
+        'CREATE',
+        'Daily Activity',
+        result.lastInsertRowid,
+        null,
+        req.body
+      );
+
+      res.status(201).json({
+        ok: true,
+        id:
+          result.lastInsertRowid
+      });
+    } catch (error) {
+      console.error(
+        'ACTIVITY ERROR:',
+        error
+      );
+
+      res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to save activity.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -1394,35 +2186,52 @@ app.get(
   '/api/activities',
   auth,
   (req, res) => {
-    const data = rows(
-      d1(req)
-        ? `
-          SELECT
-            a.*,
-            u.name AS user_name,
-            u.department_id
-          FROM activities a
-          JOIN users u
-            ON u.id=a.user_id
-          ORDER BY a.id DESC
-        `
-        : `
-          SELECT
-            a.*,
-            u.name AS user_name,
-            u.department_id
-          FROM activities a
-          JOIN users u
-            ON u.id=a.user_id
-          WHERE u.department_id=?
-          ORDER BY a.id DESC
-        `,
-      ...(d1(req)
-        ? []
-        : [req.user.department_id])
-    );
+    try {
+      const data =
+        rows(
+          d1(req)
+            ? `
+              SELECT
+                a.*,
+                u.name AS user_name,
+                u.department_id
+              FROM activities a
+              JOIN users u
+                ON u.id=a.user_id
+              ORDER BY a.id DESC
+            `
+            : `
+              SELECT
+                a.*,
+                u.name AS user_name,
+                u.department_id
+              FROM activities a
+              JOIN users u
+                ON u.id=a.user_id
+              WHERE u.department_id=?
+                 OR a.user_id=?
+              ORDER BY a.id DESC
+            `,
+          ...(d1(req)
+            ? []
+            : [
+                req.user.department_id,
+                req.user.id
+              ])
+        );
 
-    res.json(data);
+      res.json(data);
+    } catch (error) {
+      console.error(
+        'ACTIVITIES LOAD ERROR:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Unable to load activities.'
+      });
+    }
   }
 );
 
@@ -1434,34 +2243,51 @@ app.get(
   '/api/goals',
   auth,
   (req, res) => {
-    res.json(
-      rows(
-        d1(req)
-          ? `
-            SELECT
-              g.*,
-              u.name AS creator_name
-            FROM goals g
-            JOIN users u
-              ON u.id=g.created_by
-            ORDER BY g.id DESC
-          `
-          : `
-            SELECT
-              g.*,
-              u.name AS creator_name
-            FROM goals g
-            JOIN users u
-              ON u.id=g.created_by
-            WHERE g.department_id=?
-               OR g.department_id IS NULL
-            ORDER BY g.id DESC
-          `,
-        ...(d1(req)
-          ? []
-          : [req.user.department_id])
-      )
-    );
+    try {
+      res.json(
+        rows(
+          d1(req)
+            ? `
+              SELECT
+                g.*,
+                u.name AS creator_name
+              FROM goals g
+              JOIN users u
+                ON u.id=g.created_by
+              ORDER BY g.id DESC
+            `
+            : `
+              SELECT
+                g.*,
+                u.name AS creator_name
+              FROM goals g
+              JOIN users u
+                ON u.id=g.created_by
+              WHERE
+                g.department_id=?
+                OR g.department_id IS NULL
+                OR g.created_by=?
+              ORDER BY g.id DESC
+            `,
+          ...(d1(req)
+            ? []
+            : [
+                req.user.department_id,
+                req.user.id
+              ])
+        )
+      );
+    } catch (error) {
+      console.error(
+        'GOALS LOAD ERROR:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Unable to load goals.'
+      });
+    }
   }
 );
 
@@ -1469,20 +2295,6 @@ app.post(
   '/api/goals',
   auth,
   (req, res) => {
-    if (
-      !d1(req) &&
-      ![
-        'D2',
-        'D3',
-        'D4',
-        'D5'
-      ].includes(req.user.department_id)
-    ) {
-      return res.status(403).json({
-        error: 'Not permitted'
-      });
-    }
-
     const {
       title,
       scope = 'Department',
@@ -1494,7 +2306,8 @@ app.post(
 
     if (!title) {
       return res.status(400).json({
-        error: 'Title required'
+        error:
+          'Title required.'
       });
     }
 
@@ -1504,48 +2317,78 @@ app.post(
 
     if (
       !d1(req) &&
-      dept !== req.user.department_id
+      dept !==
+        req.user.department_id
     ) {
       return res.status(403).json({
-        error: 'Only your department'
+        error:
+          'You can create goals only for your department.'
       });
     }
 
-    const result = db.prepare(`
-      INSERT INTO goals
-      (
-        title,
-        scope,
-        department_id,
-        target,
-        achieved,
-        period,
-        created_by
+    if (
+      !one(
+        'SELECT id FROM departments WHERE id=?',
+        dept
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      title,
-      scope,
-      dept,
-      Number(target),
-      Number(achieved),
-      period,
-      req.user.id
-    );
+    ) {
+      return res.status(400).json({
+        error:
+          'Invalid department.'
+      });
+    }
 
-    log(
-      req,
-      'CREATE',
-      'Goal',
-      result.lastInsertRowid,
-      null,
-      req.body
-    );
+    try {
+      const result =
+        db.prepare(`
+          INSERT INTO goals
+          (
+            title,
+            scope,
+            department_id,
+            target,
+            achieved,
+            period,
+            created_by
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          title,
+          scope,
+          dept,
+          Number(target),
+          Number(achieved),
+          period,
+          req.user.id
+        );
 
-    res.json({
-      ok: true,
-      id: result.lastInsertRowid
-    });
+      log(
+        req,
+        'CREATE',
+        'Goal',
+        result.lastInsertRowid,
+        null,
+        req.body
+      );
+
+      res.status(201).json({
+        ok: true,
+        id:
+          result.lastInsertRowid
+      });
+    } catch (error) {
+      console.error(
+        'GOAL CREATE ERROR:',
+        error
+      );
+
+      res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to save goal.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -1553,14 +2396,16 @@ app.patch(
   '/api/goals/:id',
   auth,
   (req, res) => {
-    const goal = one(
-      'SELECT * FROM goals WHERE id=?',
-      req.params.id
-    );
+    const goal =
+      one(
+        'SELECT * FROM goals WHERE id=?',
+        req.params.id
+      );
 
     if (!goal) {
       return res.status(404).json({
-        error: 'Goal not found'
+        error:
+          'Goal not found.'
       });
     }
 
@@ -1570,50 +2415,76 @@ app.patch(
         req.user.department_id
     ) {
       return res.status(403).json({
-        error: 'Not permitted'
+        error:
+          'Not permitted.'
       });
     }
 
     const next = {
       ...goal,
+
       achieved:
-        req.body.achieved === undefined
+        req.body.achieved ===
+        undefined
           ? goal.achieved
-          : Number(req.body.achieved),
+          : Number(
+              req.body.achieved
+            ),
 
       title:
-        req.body.title ?? goal.title,
+        req.body.title ??
+        goal.title,
 
       target:
-        req.body.target === undefined
+        req.body.target ===
+        undefined
           ? goal.target
-          : Number(req.body.target)
+          : Number(
+              req.body.target
+            )
     };
 
-    db.prepare(`
-      UPDATE goals
-      SET
-        title=?,
-        target=?,
-        achieved=?
-      WHERE id=?
-    `).run(
-      next.title,
-      next.target,
-      next.achieved,
-      goal.id
-    );
+    try {
+      db.prepare(`
+        UPDATE goals
+        SET
+          title=?,
+          target=?,
+          achieved=?
+        WHERE id=?
+      `).run(
+        next.title,
+        next.target,
+        next.achieved,
+        goal.id
+      );
 
-    log(
-      req,
-      'CHANGE',
-      'Goal',
-      goal.id,
-      goal,
-      next
-    );
+      log(
+        req,
+        'CHANGE',
+        'Goal',
+        goal.id,
+        goal,
+        next
+      );
 
-    res.json({ ok: true });
+      res.json({
+        ok: true,
+        goal: next
+      });
+    } catch (error) {
+      console.error(
+        'GOAL UPDATE ERROR:',
+        error
+      );
+
+      res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to update goal.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -1625,8 +2496,14 @@ app.get(
   '/api/assignments',
   auth,
   (req, res) => {
-    if (d1(req)) {
-      return res.json(
+    if (
+      !deptOnly(req, ['D4'])
+    ) {
+      return res.json([]);
+    }
+
+    try {
+      res.json(
         rows(`
           SELECT
             a.*,
@@ -1637,19 +2514,17 @@ app.get(
           ORDER BY a.id DESC
         `)
       );
-    }
+    } catch (error) {
+      console.error(
+        'ASSIGNMENTS LOAD ERROR:',
+        error
+      );
 
-    res.json(
-      rows(`
-        SELECT
-          a.*,
-          m.code AS motorcycle_code
-        FROM assignments a
-        JOIN motorcycles m
-          ON m.id=a.motorcycle_id
-        ORDER BY a.id DESC
-      `)
-    );
+      res.status(500).json({
+        error:
+          'Unable to load assignments.'
+      });
+    }
   }
 );
 
@@ -1657,83 +2532,131 @@ app.post(
   '/api/assignments',
   auth,
   (req, res) => {
-    if (!deptOnly(req, ['D4'])) {
+    if (
+      !deptOnly(req, ['D4'])
+    ) {
       return res.status(403).json({
-        error: 'D4 Operations or D1 only'
+        error:
+          'Only D4 Operations or D1 can manage rider assignments.'
       });
     }
 
-    const {
-      motorcycle_id,
-      rider_name,
-      start_date,
-      end_date,
-      notes = ''
-    } = req.body;
+    const motorcycleId =
+      Number(
+        req.body.motorcycle_id
+      );
+
+    const riderName =
+      String(
+        req.body.rider_name || ''
+      ).trim();
+
+    const startDate =
+      String(
+        req.body.start_date || ''
+      ).trim();
+
+    const endDate =
+      req.body.end_date
+        ? String(
+            req.body.end_date
+          )
+        : null;
+
+    const notes =
+      String(
+        req.body.notes || ''
+      );
 
     if (
-      !motorcycle_id ||
-      !rider_name ||
-      !start_date
+      !Number.isInteger(
+        motorcycleId
+      ) ||
+      !riderName ||
+      !startDate
     ) {
       return res.status(400).json({
         error:
-          'Motorcycle, rider and start date required'
+          'Motorcycle, rider and start date are required.'
       });
     }
 
-    const motorcycle = one(
-      'SELECT id FROM motorcycles WHERE id=?',
-      motorcycle_id
-    );
-
-    if (!motorcycle) {
-      return res.status(400).json({
-        error: 'Motorcycle not found'
-      });
-    }
-
-    db.prepare(`
-      UPDATE assignments
-      SET end_date=?
-      WHERE motorcycle_id=?
-        AND end_date IS NULL
-    `).run(
-      start_date,
-      motorcycle_id
-    );
-
-    const result = db.prepare(`
-      INSERT INTO assignments
-      (
-        motorcycle_id,
-        rider_name,
-        start_date,
-        end_date,
-        notes
+    if (
+      !motorcycleExists(
+        motorcycleId
       )
-      VALUES (?, ?, ?, ?, ?)
-    `).run(
-      motorcycle_id,
-      rider_name,
-      start_date,
-      end_date || null,
-      notes
-    );
+    ) {
+      return res.status(400).json({
+        error:
+          'Motorcycle not found.'
+      });
+    }
 
-    log(
-      req,
-      'CREATE',
-      'Rider Assignment',
-      result.lastInsertRowid,
-      null,
-      req.body
-    );
+    try {
+      const transaction =
+        db.transaction(() => {
+          db.prepare(`
+            UPDATE assignments
+            SET end_date=?
+            WHERE motorcycle_id=?
+              AND end_date IS NULL
+          `).run(
+            startDate,
+            motorcycleId
+          );
 
-    res.json({
-      ok: true,
-      id: result.lastInsertRowid
-    });
+          const result =
+            db.prepare(`
+              INSERT INTO assignments
+              (
+                motorcycle_id,
+                rider_name,
+                start_date,
+                end_date,
+                notes
+              )
+              VALUES (?, ?, ?, ?, ?)
+            `).run(
+              motorcycleId,
+              riderName,
+              startDate,
+              endDate,
+              notes
+            );
+
+          return result;
+        });
+
+      const result =
+        transaction();
+
+      log(
+        req,
+        'CREATE',
+        'Rider Assignment',
+        result.lastInsertRowid,
+        null,
+        req.body
+      );
+
+      res.status(201).json({
+        ok: true,
+        id:
+          result.lastInsertRowid
+      });
+    } catch (error) {
+      console.error(
+        'ASSIGNMENT ERROR:',
+        error
+      );
+
+      res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to save assignment.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -1745,80 +2668,125 @@ app.post(
   '/api/odometer',
   auth,
   (req, res) => {
-    const {
-      motorcycle_id,
-      date,
-      mileage
-    } = req.body;
-
     if (
-      !motorcycle_id ||
-      !date ||
-      Number(mileage) < 0
+      !deptOnly(req, ['D4'])
     ) {
-      return res.status(400).json({
-        error: 'Invalid odometer'
+      return res.status(403).json({
+        error:
+          'Only D4 Operations or D1 can enter odometer records.'
       });
     }
 
-    const motorcycle = one(
-      'SELECT id FROM motorcycles WHERE id=?',
-      motorcycle_id
-    );
+    const motorcycleId =
+      Number(
+        req.body.motorcycle_id
+      );
 
-    if (!motorcycle) {
-      return res.status(400).json({
-        error: 'Motorcycle not found'
-      });
-    }
+    const date =
+      String(
+        req.body.date || ''
+      ).trim();
 
-    const prev = one(`
-      SELECT mileage
-      FROM odometer
-      WHERE motorcycle_id=?
-      ORDER BY date DESC, id DESC
-      LIMIT 1
-    `, motorcycle_id);
+    const mileage =
+      Number(
+        req.body.mileage
+      );
 
     if (
-      prev &&
-      Number(mileage) < Number(prev.mileage)
+      !Number.isInteger(
+        motorcycleId
+      ) ||
+      !date ||
+      !Number.isFinite(
+        mileage
+      ) ||
+      mileage < 0
     ) {
       return res.status(400).json({
         error:
-          'Mileage cannot go backwards'
+          'Invalid odometer data.'
       });
     }
 
-    const result = db.prepare(`
-      INSERT INTO odometer
-      (
-        motorcycle_id,
-        date,
-        mileage,
-        entered_by
+    if (
+      !motorcycleExists(
+        motorcycleId
       )
-      VALUES (?, ?, ?, ?)
-    `).run(
-      motorcycle_id,
-      date,
-      Number(mileage),
-      req.user.id
-    );
+    ) {
+      return res.status(400).json({
+        error:
+          'Motorcycle not found.'
+      });
+    }
 
-    log(
-      req,
-      'CREATE',
-      'Odometer',
-      result.lastInsertRowid,
-      null,
-      req.body
-    );
+    const prev =
+      one(
+        `
+        SELECT mileage
+        FROM odometer
+        WHERE motorcycle_id=?
+        ORDER BY date DESC, id DESC
+        LIMIT 1
+        `,
+        motorcycleId
+      );
 
-    res.json({
-      ok: true,
-      id: result.lastInsertRowid
-    });
+    if (
+      prev &&
+      mileage <
+        Number(prev.mileage)
+    ) {
+      return res.status(400).json({
+        error:
+          'Mileage cannot go backwards.'
+      });
+    }
+
+    try {
+      const result =
+        db.prepare(`
+          INSERT INTO odometer
+          (
+            motorcycle_id,
+            date,
+            mileage,
+            entered_by
+          )
+          VALUES (?, ?, ?, ?)
+        `).run(
+          motorcycleId,
+          date,
+          mileage,
+          req.user.id
+        );
+
+      log(
+        req,
+        'CREATE',
+        'Odometer',
+        result.lastInsertRowid,
+        null,
+        req.body
+      );
+
+      res.status(201).json({
+        ok: true,
+        id:
+          result.lastInsertRowid
+      });
+    } catch (error) {
+      console.error(
+        'ODOMETER ERROR:',
+        error
+      );
+
+      res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to save odometer.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -1826,20 +2794,40 @@ app.get(
   '/api/odometer',
   auth,
   (req, res) => {
-    res.json(
-      rows(`
-        SELECT
-          o.*,
-          m.code AS motorcycle_code,
-          u.name AS entered_name
-        FROM odometer o
-        JOIN motorcycles m
-          ON m.id=o.motorcycle_id
-        JOIN users u
-          ON u.id=o.entered_by
-        ORDER BY o.date DESC, o.id DESC
-      `)
-    );
+    if (
+      !deptOnly(req, ['D4'])
+    ) {
+      return res.json([]);
+    }
+
+    try {
+      res.json(
+        rows(`
+          SELECT
+            o.*,
+            m.code AS motorcycle_code,
+            u.name AS entered_name
+          FROM odometer o
+          JOIN motorcycles m
+            ON m.id=o.motorcycle_id
+          JOIN users u
+            ON u.id=o.entered_by
+          ORDER BY
+            o.date DESC,
+            o.id DESC
+        `)
+      );
+    } catch (error) {
+      console.error(
+        'ODOMETER LOAD ERROR:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Unable to load odometer records.'
+      });
+    }
   }
 );
 
@@ -1851,113 +2839,232 @@ app.post(
   '/api/maintenance',
   auth,
   (req, res) => {
-    const {
-      motorcycle_id,
-      issue,
-      date,
-      mileage,
-      parts,
-      cost,
-      garage,
-      next_service,
-      downtime,
-      status = 'Completed'
-    } = req.body;
+    if (
+      !deptOnly(req, ['D4'])
+    ) {
+      return res.status(403).json({
+        error:
+          'Only D4 Operations or D1 can manage maintenance.'
+      });
+    }
+
+    const motorcycleId =
+      Number(
+        req.body.motorcycle_id
+      );
+
+    const issue =
+      String(
+        req.body.issue || ''
+      ).trim();
+
+    const date =
+      String(
+        req.body.date || ''
+      ).trim();
+
+    const mileage =
+      req.body.mileage ===
+      undefined ||
+      req.body.mileage === ''
+        ? null
+        : Number(
+            req.body.mileage
+          );
+
+    const parts =
+      String(
+        req.body.parts || ''
+      );
+
+    const cost =
+      Number(
+        req.body.cost || 0
+      );
+
+    const garage =
+      String(
+        req.body.garage || ''
+      );
+
+    const nextService =
+      req.body.next_service
+        ? String(
+            req.body.next_service
+          )
+        : null;
+
+    const downtime =
+      Number(
+        req.body.downtime || 0
+      );
+
+    const status =
+      String(
+        req.body.status ||
+          'Completed'
+      );
+
+    const allowedStatuses = [
+      'In Progress',
+      'Completed',
+      'Cancelled'
+    ];
 
     if (
-      !motorcycle_id ||
+      !Number.isInteger(
+        motorcycleId
+      ) ||
       !issue ||
       !date
     ) {
       return res.status(400).json({
         error:
-          'Motorcycle, issue and date required'
+          'Motorcycle, issue and date are required.'
       });
-    }
-
-    const motorcycle = one(
-      'SELECT id FROM motorcycles WHERE id=?',
-      motorcycle_id
-    );
-
-    if (!motorcycle) {
-      return res.status(400).json({
-        error: 'Motorcycle not found'
-      });
-    }
-
-    const result = db.prepare(`
-      INSERT INTO maintenance
-      (
-        motorcycle_id,
-        issue,
-        date,
-        mileage,
-        parts,
-        cost,
-        garage,
-        next_service,
-        downtime,
-        status
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      motorcycle_id,
-      issue,
-      date,
-      mileage || null,
-      parts || '',
-      Number(cost || 0),
-      garage || '',
-      next_service || null,
-      Number(downtime || 0),
-      status
-    );
-
-    if (status === 'In Progress') {
-      db.prepare(`
-        UPDATE motorcycles
-        SET status='Under Maintenance'
-        WHERE id=?
-      `).run(motorcycle_id);
     }
 
     if (
-      status === 'Completed' ||
-      status === 'Cancelled'
+      !motorcycleExists(
+        motorcycleId
+      )
     ) {
-      const openMaintenance = one(`
-        SELECT id
-        FROM maintenance
-        WHERE motorcycle_id=?
-          AND status='In Progress'
-        ORDER BY date DESC, id DESC
-        LIMIT 1
-      `, motorcycle_id);
-
-      if (!openMaintenance) {
-        db.prepare(`
-          UPDATE motorcycles
-          SET status='Active'
-          WHERE id=?
-            AND status='Under Maintenance'
-        `).run(motorcycle_id);
-      }
+      return res.status(400).json({
+        error:
+          'Motorcycle not found.'
+      });
     }
 
-    log(
-      req,
-      'CREATE',
-      'Maintenance',
-      result.lastInsertRowid,
-      null,
-      req.body
-    );
+    if (
+      !allowedStatuses.includes(
+        status
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          'Invalid maintenance status.'
+      });
+    }
 
-    res.json({
-      ok: true,
-      id: result.lastInsertRowid
-    });
+    if (
+      !Number.isFinite(cost) ||
+      cost < 0
+    ) {
+      return res.status(400).json({
+        error:
+          'Invalid maintenance cost.'
+      });
+    }
+
+    try {
+      const transaction =
+        db.transaction(() => {
+          const result =
+            db.prepare(`
+              INSERT INTO maintenance
+              (
+                motorcycle_id,
+                issue,
+                date,
+                mileage,
+                parts,
+                cost,
+                garage,
+                next_service,
+                downtime,
+                status
+              )
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              motorcycleId,
+              issue,
+              date,
+              mileage,
+              parts,
+              cost,
+              garage,
+              nextService,
+              downtime,
+              status
+            );
+
+          if (
+            status ===
+            'In Progress'
+          ) {
+            db.prepare(`
+              UPDATE motorcycles
+              SET status='Under Maintenance'
+              WHERE id=?
+            `).run(
+              motorcycleId
+            );
+          }
+
+          if (
+            status ===
+              'Completed' ||
+            status ===
+              'Cancelled'
+          ) {
+            const open =
+              one(`
+                SELECT id
+                FROM maintenance
+                WHERE motorcycle_id=?
+                  AND status='In Progress'
+                ORDER BY
+                  date DESC,
+                  id DESC
+                LIMIT 1
+              `,
+              motorcycleId);
+
+            if (!open) {
+              db.prepare(`
+                UPDATE motorcycles
+                SET status='Active'
+                WHERE id=?
+                  AND status='Under Maintenance'
+              `).run(
+                motorcycleId
+              );
+            }
+          }
+
+          return result;
+        });
+
+      const result =
+        transaction();
+
+      log(
+        req,
+        'CREATE',
+        'Maintenance',
+        result.lastInsertRowid,
+        null,
+        req.body
+      );
+
+      res.status(201).json({
+        ok: true,
+        id:
+          result.lastInsertRowid
+      });
+    } catch (error) {
+      console.error(
+        'MAINTENANCE ERROR:',
+        error
+      );
+
+      res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to save maintenance record.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -1965,17 +3072,37 @@ app.get(
   '/api/maintenance',
   auth,
   (req, res) => {
-    res.json(
-      rows(`
-        SELECT
-          m.*,
-          x.code AS motorcycle_code
-        FROM maintenance m
-        JOIN motorcycles x
-          ON x.id=m.motorcycle_id
-        ORDER BY m.date DESC, m.id DESC
-      `)
-    );
+    if (
+      !deptOnly(req, ['D4'])
+    ) {
+      return res.json([]);
+    }
+
+    try {
+      res.json(
+        rows(`
+          SELECT
+            m.*,
+            x.code AS motorcycle_code
+          FROM maintenance m
+          JOIN motorcycles x
+            ON x.id=m.motorcycle_id
+          ORDER BY
+            m.date DESC,
+            m.id DESC
+        `)
+      );
+    } catch (error) {
+      console.error(
+        'MAINTENANCE LOAD ERROR:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Unable to load maintenance records.'
+      });
+    }
   }
 );
 
@@ -1987,69 +3114,109 @@ app.get(
   '/api/fleet-detail/:id',
   auth,
   (req, res) => {
-    const id = req.params.id;
-
-    const motorcycle = one(
-      'SELECT * FROM motorcycles WHERE id=?',
-      id
-    );
-
-    if (!motorcycle) {
-      return res.status(404).json({
-        error: 'Motorcycle not found'
+    if (
+      !deptOnly(req, ['D3', 'D4'])
+    ) {
+      return res.status(403).json({
+        error:
+          'Fleet details are restricted to D3, D4 and D1.'
       });
     }
 
-    res.json({
-      motorcycle,
+    const id =
+      Number(req.params.id);
 
-      income: rows(`
-        SELECT
-          i.*,
-          u.name AS entered_name
-        FROM income i
-        JOIN users u
-          ON u.id=i.entered_by
-        WHERE i.motorcycle_id=?
-        ORDER BY i.date DESC, i.id DESC
-      `, id),
+    if (
+      !Number.isInteger(id)
+    ) {
+      return res.status(400).json({
+        error:
+          'Invalid motorcycle.'
+      });
+    }
 
-      expenses: rows(`
-        SELECT
-          e.*,
-          u.name AS entered_name
-        FROM expenses e
-        JOIN users u
-          ON u.id=e.entered_by
-        WHERE e.motorcycle_id=?
-        ORDER BY e.date DESC, e.id DESC
-      `, id),
+    const motorcycle =
+      motorcycleExists(id);
 
-      maintenance: rows(`
-        SELECT *
-        FROM maintenance
-        WHERE motorcycle_id=?
-        ORDER BY date DESC, id DESC
-      `, id),
+    if (!motorcycle) {
+      return res.status(404).json({
+        error:
+          'Motorcycle not found.'
+      });
+    }
 
-      odometer: rows(`
-        SELECT
-          o.*,
-          u.name AS entered_name
-        FROM odometer o
-        JOIN users u
-          ON u.id=o.entered_by
-        WHERE o.motorcycle_id=?
-        ORDER BY date DESC, id DESC
-      `, id),
+    try {
+      res.json({
+        motorcycle,
 
-      assignments: rows(`
-        SELECT *
-        FROM assignments
-        WHERE motorcycle_id=?
-        ORDER BY start_date DESC, id DESC
-      `, id)
-    });
+        income: rows(`
+          SELECT
+            i.*,
+            u.name AS entered_name
+          FROM income i
+          JOIN users u
+            ON u.id=i.entered_by
+          WHERE i.motorcycle_id=?
+          ORDER BY
+            i.date DESC,
+            i.id DESC
+        `, id),
+
+        expenses: rows(`
+          SELECT
+            e.*,
+            u.name AS entered_name
+          FROM expenses e
+          JOIN users u
+            ON u.id=e.entered_by
+          WHERE e.motorcycle_id=?
+          ORDER BY
+            e.date DESC,
+            e.id DESC
+        `, id),
+
+        maintenance: rows(`
+          SELECT *
+          FROM maintenance
+          WHERE motorcycle_id=?
+          ORDER BY
+            date DESC,
+            id DESC
+        `, id),
+
+        odometer: rows(`
+          SELECT
+            o.*,
+            u.name AS entered_name
+          FROM odometer o
+          JOIN users u
+            ON u.id=o.entered_by
+          WHERE o.motorcycle_id=?
+          ORDER BY
+            date DESC,
+            id DESC
+        `, id),
+
+        assignments: rows(`
+          SELECT *
+          FROM assignments
+          WHERE motorcycle_id=?
+          ORDER BY
+            start_date DESC,
+            id DESC
+        `, id)
+      });
+    } catch (error) {
+      console.error(
+        'FLEET DETAIL ERROR:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Unable to load fleet details.'
+      });
+    }
   }
 );
 
@@ -2061,10 +3228,12 @@ app.post(
   '/api/daily-closing',
   auth,
   (req, res) => {
-    if (!deptOnly(req, ['D4'])) {
+    if (
+      !deptOnly(req, ['D4'])
+    ) {
       return res.status(403).json({
         error:
-          'D4 Operations or D1 only'
+          'Only D4 Operations or D1 can close daily operations.'
       });
     }
 
@@ -2074,42 +3243,54 @@ app.post(
         .toISOString()
         .slice(0, 10);
 
-    const income = one(`
-      SELECT COALESCE(SUM(amount), 0) AS total
-      FROM income
-      WHERE date=?
-    `, date).total;
+    const income =
+      one(`
+        SELECT
+          COALESCE(
+            SUM(amount),
+            0
+          ) AS total
+        FROM income
+        WHERE date=?
+      `, date).total;
 
-    const expenses = one(`
-      SELECT COALESCE(SUM(amount), 0) AS total
-      FROM expenses
-      WHERE date=?
-    `, date).total;
+    const expenses =
+      one(`
+        SELECT
+          COALESCE(
+            SUM(amount),
+            0
+          ) AS total
+        FROM expenses
+        WHERE date=?
+          AND motorcycle_id IS NOT NULL
+      `, date).total;
 
     const net =
       Number(income) -
       Number(expenses);
 
     try {
-      const result = db.prepare(`
-        INSERT INTO daily_closings
-        (
+      const result =
+        db.prepare(`
+          INSERT INTO daily_closings
+          (
+            date,
+            income,
+            expenses,
+            net,
+            closed_by,
+            notes
+          )
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
           date,
           income,
           expenses,
           net,
-          closed_by,
-          notes
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(
-        date,
-        income,
-        expenses,
-        net,
-        req.user.id,
-        req.body.notes || ''
-      );
+          req.user.id,
+          req.body.notes || ''
+        );
 
       log(
         req,
@@ -2122,13 +3303,15 @@ app.post(
           income,
           expenses,
           net,
-          notes: req.body.notes || ''
+          notes:
+            req.body.notes || ''
         }
       );
 
-      res.json({
+      res.status(201).json({
         ok: true,
-        id: result.lastInsertRowid,
+        id:
+          result.lastInsertRowid,
         income,
         expenses,
         net
@@ -2136,7 +3319,7 @@ app.post(
     } catch (error) {
       res.status(400).json({
         error:
-          'Closing already exists for this date'
+          'Closing already exists for this date.'
       });
     }
   }
@@ -2146,17 +3329,37 @@ app.get(
   '/api/daily-closings',
   auth,
   (req, res) => {
-    res.json(
-      rows(`
-        SELECT
-          c.*,
-          u.name AS closed_by_name
-        FROM daily_closings c
-        JOIN users u
-          ON u.id=c.closed_by
-        ORDER BY c.date DESC, c.id DESC
-      `)
-    );
+    if (
+      !deptOnly(req, ['D3', 'D4'])
+    ) {
+      return res.json([]);
+    }
+
+    try {
+      res.json(
+        rows(`
+          SELECT
+            c.*,
+            u.name AS closed_by_name
+          FROM daily_closings c
+          JOIN users u
+            ON u.id=c.closed_by
+          ORDER BY
+            c.date DESC,
+            c.id DESC
+        `)
+      );
+    } catch (error) {
+      console.error(
+        'CLOSINGS LOAD ERROR:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Unable to load daily closings.'
+      });
+    }
   }
 );
 
@@ -2174,61 +3377,137 @@ app.post(
       (error) => {
         if (error) {
           return res.status(400).json({
-            error: error.message
+            error:
+              error.message
           });
         }
 
         if (!req.file) {
           return res.status(400).json({
-            error: 'File required'
+            error:
+              'File required.'
           });
         }
 
-        const result = db.prepare(`
-          INSERT INTO evidence
-          (
-            filename,
-            original_name,
-            mime,
-            uploaded_by,
-            task_id,
-            report_id
+        const taskId =
+          req.body.task_id
+            ? Number(
+                req.body.task_id
+              )
+            : null;
+
+        const reportId =
+          req.body.report_id
+            ? Number(
+                req.body.report_id
+              )
+            : null;
+
+        /*
+         * Validate linked task/report
+         * before storing evidence.
+         */
+        if (
+          taskId !== null &&
+          !one(
+            'SELECT id FROM tasks WHERE id=?',
+            taskId
           )
-          VALUES (?, ?, ?, ?, ?, ?)
-        `).run(
-          req.file.filename,
-          req.file.originalname,
-          req.file.mimetype,
-          req.user.id,
-          req.body.task_id ||
-            null,
-          req.body.report_id ||
-            null
-        );
+        ) {
+          try {
+            fs.unlinkSync(
+              req.file.path
+            );
+          } catch (_) {}
 
-        log(
-          req,
-          'CREATE',
-          'Evidence',
-          result.lastInsertRowid,
-          null,
-          {
-            original_name:
+          return res.status(400).json({
+            error:
+              'Linked task not found.'
+          });
+        }
+
+        if (
+          reportId !== null &&
+          !one(
+            'SELECT id FROM reports WHERE id=?',
+            reportId
+          )
+        ) {
+          try {
+            fs.unlinkSync(
+              req.file.path
+            );
+          } catch (_) {}
+
+          return res.status(400).json({
+            error:
+              'Linked report not found.'
+          });
+        }
+
+        try {
+          const result =
+            db.prepare(`
+              INSERT INTO evidence
+              (
+                filename,
+                original_name,
+                mime,
+                uploaded_by,
+                task_id,
+                report_id
+              )
+              VALUES (?, ?, ?, ?, ?, ?)
+            `).run(
+              req.file.filename,
               req.file.originalname,
-            task_id:
-              req.body.task_id,
-            report_id:
-              req.body.report_id
-          }
-        );
+              req.file.mimetype,
+              req.user.id,
+              taskId,
+              reportId
+            );
 
-        res.json({
-          ok: true,
-          id: result.lastInsertRowid,
-          url:
-            '/uploads/' +
-            req.file.filename
-        });
+          log(
+            req,
+            'CREATE',
+            'Evidence',
+            result.lastInsertRowid,
+            null,
+            {
+              original_name:
+                req.file.originalname,
+              task_id: taskId,
+              report_id: reportId
+            }
+          );
+
+          res.status(201).json({
+            ok: true,
+            id:
+              result.lastInsertRowid,
+            url:
+              '/uploads/' +
+              req.file.filename
+          });
+        } catch (dbError) {
+          try {
+            fs.unlinkSync(
+              req.file.path
+            );
+          } catch (_) {}
+
+          console.error(
+            'EVIDENCE ERROR:',
+            dbError
+          );
+
+          res.status(400).json({
+            error:
+              NODE_ENV === 'production'
+                ? 'Unable to save evidence.'
+                : dbError.message
+          });
+        }
       }
     );
   }
@@ -2238,33 +3517,55 @@ app.get(
   '/api/evidence',
   auth,
   (req, res) => {
-    res.json(
-      rows(
-        d1(req)
-          ? `
-            SELECT
-              e.*,
-              u.name AS uploaded_name
-            FROM evidence e
-            JOIN users u
-              ON u.id=e.uploaded_by
-            ORDER BY e.id DESC
-          `
-          : `
-            SELECT
-              e.*,
-              u.name AS uploaded_name
-            FROM evidence e
-            JOIN users u
-              ON u.id=e.uploaded_by
-            WHERE u.department_id=?
-            ORDER BY e.id DESC
-          `,
-        ...(d1(req)
-          ? []
-          : [req.user.department_id])
-      )
-    );
+    try {
+      const data =
+        rows(
+          d1(req)
+            ? `
+              SELECT
+                e.*,
+                u.name AS uploaded_name,
+                u.department_id
+                  AS uploaded_department
+              FROM evidence e
+              JOIN users u
+                ON u.id=e.uploaded_by
+              ORDER BY e.id DESC
+            `
+            : `
+              SELECT
+                e.*,
+                u.name AS uploaded_name,
+                u.department_id
+                  AS uploaded_department
+              FROM evidence e
+              JOIN users u
+                ON u.id=e.uploaded_by
+              WHERE
+                u.department_id=?
+                OR e.uploaded_by=?
+              ORDER BY e.id DESC
+            `,
+          ...(d1(req)
+            ? []
+            : [
+                req.user.department_id,
+                req.user.id
+              ])
+        );
+
+      res.json(data);
+    } catch (error) {
+      console.error(
+        'EVIDENCE LOAD ERROR:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Unable to load evidence.'
+      });
+    }
   }
 );
 
@@ -2276,43 +3577,67 @@ app.get(
   '/api/audit',
   auth,
   (req, res) => {
-    const q = String(
-      req.query.q || ''
-    ).toLowerCase();
+    const q =
+      String(
+        req.query.q || ''
+      ).toLowerCase();
 
-    const data = rows(
-      d1(req)
-        ? `
-          SELECT
-            a.*,
-            u.name AS user_name
-          FROM audit a
-          LEFT JOIN users u
-            ON u.id=a.who_user
-          ORDER BY a.id DESC
-        `
-        : `
-          SELECT
-            a.*,
-            u.name AS user_name
-          FROM audit a
-          LEFT JOIN users u
-            ON u.id=a.who_user
-          WHERE u.department_id=?
-          ORDER BY a.id DESC
-        `,
-      ...(d1(req)
-        ? []
-        : [req.user.department_id])
-    );
+    try {
+      const data =
+        rows(
+          d1(req)
+            ? `
+              SELECT
+                a.*,
+                u.name AS user_name,
+                u.department_id
+                  AS user_department
+              FROM audit a
+              LEFT JOIN users u
+                ON u.id=a.who_user
+              ORDER BY a.id DESC
+            `
+            : `
+              SELECT
+                a.*,
+                u.name AS user_name,
+                u.department_id
+                  AS user_department
+              FROM audit a
+              LEFT JOIN users u
+                ON u.id=a.who_user
+              WHERE
+                a.who_user=?
+                OR u.department_id=?
+              ORDER BY a.id DESC
+            `,
+          ...(d1(req)
+            ? []
+            : [
+                req.user.id,
+                req.user.department_id
+              ])
+        );
 
-    res.json(
-      data.filter((item) =>
-        JSON.stringify(item)
-          .toLowerCase()
-          .includes(q)
-      )
-    );
+      res.json(
+        data.filter(
+          (item) =>
+            JSON.stringify(item)
+              .toLowerCase()
+              .includes(q)
+        )
+      );
+    } catch (error) {
+      console.error(
+        'AUDIT LOAD ERROR:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Unable to load audit records.'
+      });
+    }
   }
 );
 
@@ -2325,74 +3650,97 @@ app.post(
   auth,
   (req, res) => {
     if (
-      !['D3', 'D4'].includes(
-        req.user.department_id
-      ) &&
-      !d1(req)
+      !deptOnly(req, ['D3', 'D4'])
     ) {
       return res.status(403).json({
         error:
-          'Finance changes are restricted'
+          'Finance changes are restricted to D3, D4 and D1.'
       });
     }
 
-    const {
-      record_type,
-      record_id,
-      original,
-      proposed,
-      reason
-    } = req.body;
+    const recordType =
+      String(
+        req.body.record_type ||
+          ''
+      ).trim();
+
+    const recordId =
+      Number(
+        req.body.record_id
+      );
+
+    const reason =
+      String(
+        req.body.reason || ''
+      ).trim();
 
     if (
-      !record_type ||
-      !record_id ||
+      !recordType ||
+      !Number.isInteger(
+        recordId
+      ) ||
       !reason
     ) {
       return res.status(400).json({
         error:
-          'Record type, record ID and reason are mandatory'
+          'Record type, record ID and reason are mandatory.'
       });
     }
 
-    const result = db.prepare(`
-      INSERT INTO finance_changes
-      (
-        record_type,
-        record_id,
-        original_json,
-        proposed_json,
-        reason,
-        requested_by
-      )
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      record_type,
-      record_id,
-      JSON.stringify(
-        original || {}
-      ),
-      JSON.stringify(
-        proposed || {}
-      ),
-      reason,
-      req.user.id
-    );
+    try {
+      const result =
+        db.prepare(`
+          INSERT INTO finance_changes
+          (
+            record_type,
+            record_id,
+            original_json,
+            proposed_json,
+            reason,
+            requested_by
+          )
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
+          recordType,
+          recordId,
+          JSON.stringify(
+            req.body.original || {}
+          ),
+          JSON.stringify(
+            req.body.proposed || {}
+          ),
+          reason,
+          req.user.id
+        );
 
-    log(
-      req,
-      'PROPOSE_CHANGE',
-      record_type,
-      record_id,
-      original || {},
-      proposed || {},
-      reason
-    );
+      log(
+        req,
+        'PROPOSE_CHANGE',
+        recordType,
+        recordId,
+        req.body.original || {},
+        req.body.proposed || {},
+        reason
+      );
 
-    res.json({
-      ok: true,
-      id: result.lastInsertRowid
-    });
+      res.status(201).json({
+        ok: true,
+        id:
+          result.lastInsertRowid
+      });
+    } catch (error) {
+      console.error(
+        'FINANCE CHANGE ERROR:',
+        error
+      );
+
+      res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to create finance change.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -2403,14 +3751,15 @@ app.post(
     if (!d1(req)) {
       return res.status(403).json({
         error:
-          'Only D1 can approve or reject'
+          'Only D1 can approve or reject finance changes.'
       });
     }
 
-    const change = one(
-      'SELECT * FROM finance_changes WHERE id=?',
-      req.params.id
-    );
+    const change =
+      one(
+        'SELECT * FROM finance_changes WHERE id=?',
+        req.params.id
+      );
 
     if (
       !change ||
@@ -2418,7 +3767,8 @@ app.post(
         'Pending Approval'
     ) {
       return res.status(404).json({
-        error: 'Change not pending'
+        error:
+          'Change not pending.'
       });
     }
 
@@ -2426,51 +3776,81 @@ app.post(
       req.body.decision;
 
     if (
-      !['Approved', 'Rejected'].includes(
+      ![
+        'Approved',
+        'Rejected'
+      ].includes(
         decision
       )
     ) {
       return res.status(400).json({
         error:
-          'Decision must be Approved or Rejected'
+          'Decision must be Approved or Rejected.'
       });
     }
 
-    db.prepare(`
-      UPDATE finance_changes
-      SET
-        status=?,
-        decided_by=?,
-        decision_note=?,
-        decided_at=CURRENT_TIMESTAMP
-      WHERE id=?
-    `).run(
-      decision,
-      req.user.id,
-      req.body.note || '',
-      change.id
-    );
+    try {
+      db.prepare(`
+        UPDATE finance_changes
+        SET
+          status=?,
+          decided_by=?,
+          decision_note=?,
+          decided_at=CURRENT_TIMESTAMP
+        WHERE id=?
+      `).run(
+        decision,
+        req.user.id,
+        req.body.note || '',
+        change.id
+      );
 
-    log(
-      req,
-      'FINANCE_DECISION',
-      change.record_type,
-      change.record_id,
-      JSON.parse(
-        change.original_json
-      ),
-      JSON.parse(
-        change.proposed_json
-      ),
-      `${decision}: ${
-        req.body.note || ''
-      }`
-    );
+      let original = {};
+      let proposed = {};
 
-    res.json({
-      ok: true,
-      status: decision
-    });
+      try {
+        original =
+          JSON.parse(
+            change.original_json
+          );
+      } catch (_) {}
+
+      try {
+        proposed =
+          JSON.parse(
+            change.proposed_json
+          );
+      } catch (_) {}
+
+      log(
+        req,
+        'FINANCE_DECISION',
+        change.record_type,
+        change.record_id,
+        original,
+        proposed,
+        `${decision}: ${
+          req.body.note || ''
+        }`
+      );
+
+      res.json({
+        ok: true,
+        status: decision
+      });
+    } catch (error) {
+      console.error(
+        'FINANCE DECISION ERROR:',
+        error
+      );
+
+      res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to process finance decision.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -2485,7 +3865,7 @@ app.get(
     if (!d1(req)) {
       return res.status(403).json({
         error:
-          'Only D1 can manage accounts'
+          'Only D1 can manage accounts.'
       });
     }
 
@@ -2512,58 +3892,78 @@ app.post(
     if (!d1(req)) {
       return res.status(403).json({
         error:
-          'Only D1 can create accounts'
+          'Only D1 can create accounts.'
       });
     }
 
-    const {
-      name,
-      username,
-      password,
-      department_id
-    } = req.body;
+    const name =
+      String(
+        req.body.name || ''
+      ).trim();
+
+    const username =
+      String(
+        req.body.username || ''
+      )
+        .trim()
+        .toLowerCase();
+
+    const password =
+      String(
+        req.body.password || ''
+      );
+
+    const departmentId =
+      String(
+        req.body.department_id ||
+          ''
+      ).trim();
 
     if (
       !name ||
       !username ||
       !password ||
-      !department_id ||
+      !departmentId ||
       password.length < 10
     ) {
       return res.status(400).json({
         error:
-          'Name, username, department and password (10+ chars) are required'
+          'Name, username, department and password (10+ chars) are required.'
       });
     }
 
-    const department = one(
-      'SELECT id FROM departments WHERE id=?',
-      department_id
-    );
-
-    if (!department) {
+    if (
+      !one(
+        'SELECT id FROM departments WHERE id=?',
+        departmentId
+      )
+    ) {
       return res.status(400).json({
         error:
-          'Invalid department'
+          'Invalid department.'
       });
     }
 
     try {
-      const result = db.prepare(`
-        INSERT INTO users
-        (
+      const result =
+        db.prepare(`
+          INSERT INTO users
+          (
+            name,
+            username,
+            password_hash,
+            department_id
+          )
+          VALUES (?, ?, ?, ?)
+        `).run(
           name,
           username,
-          password_hash,
-          department_id
-        )
-        VALUES (?, ?, ?, ?)
-      `).run(
-        name.trim(),
-        username.trim().toLowerCase(),
-        bcrypt.hashSync(password, 12),
-        department_id
-      );
+          bcrypt.hashSync(
+            password,
+            12
+          ),
+          departmentId
+        );
 
       log(
         req,
@@ -2574,18 +3974,25 @@ app.post(
         {
           name,
           username,
-          department_id
+          department_id:
+            departmentId
         }
       );
 
-      res.json({
+      res.status(201).json({
         ok: true,
-        id: result.lastInsertRowid
+        id:
+          result.lastInsertRowid
       });
     } catch (error) {
+      console.error(
+        'USER CREATE ERROR:',
+        error
+      );
+
       res.status(400).json({
         error:
-          'Username already exists or invalid department'
+          'Username already exists or invalid department.'
       });
     }
   }
@@ -2598,94 +4005,129 @@ app.patch(
     if (!d1(req)) {
       return res.status(403).json({
         error:
-          'Only D1 can update accounts'
+          'Only D1 can update accounts.'
       });
     }
 
-    const user = one(
-      'SELECT * FROM users WHERE id=?',
-      req.params.id
-    );
+    const user =
+      one(
+        'SELECT * FROM users WHERE id=?',
+        req.params.id
+      );
 
     if (!user) {
       return res.status(404).json({
-        error: 'User not found'
+        error:
+          'User not found.'
       });
     }
 
-    const department_id =
+    const departmentId =
       req.body.department_id ||
       user.department_id;
 
     const active =
-      req.body.active === undefined
+      req.body.active ===
+      undefined
         ? user.active
         : req.body.active
           ? 1
           : 0;
 
     const name =
-      req.body.name || user.name;
+      req.body.name ||
+      user.name;
 
     if (
       !one(
         'SELECT id FROM departments WHERE id=?',
-        department_id
+        departmentId
       )
     ) {
       return res.status(400).json({
         error:
-          'Invalid department'
+          'Invalid department.'
+      });
+    }
+
+    if (
+      req.body.password &&
+      String(
+        req.body.password
+      ).length < 10
+    ) {
+      return res.status(400).json({
+        error:
+          'New password must contain at least 10 characters.'
       });
     }
 
     const changed = {
       name,
-      department_id,
+      department_id:
+        departmentId,
       active
     };
 
     const newPassword =
       req.body.password
         ? bcrypt.hashSync(
-            req.body.password,
+            String(
+              req.body.password
+            ),
             12
           )
         : null;
 
-    db.prepare(`
-      UPDATE users
-      SET
-        name=?,
-        department_id=?,
-        active=?,
-        password_hash=
-          CASE
-            WHEN ? IS NULL
-              THEN password_hash
-            ELSE ?
-          END
-      WHERE id=?
-    `).run(
-      name,
-      department_id,
-      active,
-      newPassword,
-      newPassword,
-      user.id
-    );
+    try {
+      db.prepare(`
+        UPDATE users
+        SET
+          name=?,
+          department_id=?,
+          active=?,
+          password_hash=
+            CASE
+              WHEN ? IS NULL
+                THEN password_hash
+              ELSE ?
+            END
+        WHERE id=?
+      `).run(
+        name,
+        departmentId,
+        active,
+        newPassword,
+        newPassword,
+        user.id
+      );
 
-    log(
-      req,
-      'CHANGE',
-      'User',
-      user.id,
-      user,
-      changed,
-      req.body.reason || ''
-    );
+      log(
+        req,
+        'CHANGE',
+        'User',
+        user.id,
+        user,
+        changed,
+        req.body.reason || ''
+      );
 
-    res.json({ ok: true });
+      res.json({
+        ok: true
+      });
+    } catch (error) {
+      console.error(
+        'USER UPDATE ERROR:',
+        error
+      );
+
+      res.status(400).json({
+        error:
+          NODE_ENV === 'production'
+            ? 'Unable to update account.'
+            : error.message
+      });
+    }
   }
 );
 
@@ -2697,83 +4139,146 @@ app.get(
   '/api/fleet-summary',
   auth,
   (req, res) => {
-    const income = one(`
-      SELECT COALESCE(SUM(amount), 0) AS total
-      FROM income
-    `).total;
+    if (
+      !deptOnly(req, ['D3', 'D4'])
+    ) {
+      return res.json({
+        totalMotorcycles: 0,
+        active: 0,
+        inactive: 0,
+        maintenance: 0,
+        sold: 0,
+        todayIncome: 0,
+        todayExpenses: 0,
+        todayNet: 0,
+        totalIncome: 0,
+        totalExpenses: 0,
+        net: 0
+      });
+    }
 
-    const expense = one(`
-      SELECT COALESCE(SUM(amount), 0) AS total
-      FROM expenses
-      WHERE motorcycle_id IS NOT NULL
-    `).total;
-
-    const today =
-      new Date()
-        .toISOString()
-        .slice(0, 10);
-
-    const todayIncome = one(`
-      SELECT COALESCE(SUM(amount), 0) AS total
-      FROM income
-      WHERE date=?
-    `, today).total;
-
-    const todayExpenses = one(`
-      SELECT COALESCE(SUM(amount), 0) AS total
-      FROM expenses
-      WHERE date=?
-        AND motorcycle_id IS NOT NULL
-    `, today).total;
-
-    res.json({
-      totalMotorcycles:
+    try {
+      const income =
         one(`
-          SELECT COUNT(*) AS n
-          FROM motorcycles
-        `).n,
+          SELECT
+            COALESCE(
+              SUM(amount),
+              0
+            ) AS total
+          FROM income
+        `).total;
 
-      active:
+      const expense =
         one(`
-          SELECT COUNT(*) AS n
-          FROM motorcycles
-          WHERE status='Active'
-        `).n,
+          SELECT
+            COALESCE(
+              SUM(amount),
+              0
+            ) AS total
+          FROM expenses
+          WHERE motorcycle_id
+            IS NOT NULL
+        `).total;
 
-      inactive:
+      const today =
+        new Date()
+          .toISOString()
+          .slice(0, 10);
+
+      const todayIncome =
         one(`
-          SELECT COUNT(*) AS n
-          FROM motorcycles
-          WHERE status='Inactive'
-        `).n,
+          SELECT
+            COALESCE(
+              SUM(amount),
+              0
+            ) AS total
+          FROM income
+          WHERE date=?
+        `,
+        today).total;
 
-      maintenance:
+      const todayExpenses =
         one(`
-          SELECT COUNT(*) AS n
-          FROM motorcycles
-          WHERE status='Under Maintenance'
-        `).n,
+          SELECT
+            COALESCE(
+              SUM(amount),
+              0
+            ) AS total
+          FROM expenses
+          WHERE date=?
+            AND motorcycle_id
+              IS NOT NULL
+        `,
+        today).total;
 
-      sold:
-        one(`
-          SELECT COUNT(*) AS n
-          FROM motorcycles
-          WHERE status='Sold / Retired'
-        `).n,
+      res.json({
+        totalMotorcycles:
+          one(`
+            SELECT
+              COUNT(*) AS n
+            FROM motorcycles
+          `).n,
 
-      todayIncome,
-      todayExpenses,
-      todayNet:
-        Number(todayIncome) -
-        Number(todayExpenses),
+        active:
+          one(`
+            SELECT
+              COUNT(*) AS n
+            FROM motorcycles
+            WHERE status='Active'
+          `).n,
 
-      totalIncome: income,
-      totalExpenses: expense,
+        inactive:
+          one(`
+            SELECT
+              COUNT(*) AS n
+            FROM motorcycles
+            WHERE status='Inactive'
+          `).n,
 
-      net:
-        Number(income) -
-        Number(expense)
-    });
+        maintenance:
+          one(`
+            SELECT
+              COUNT(*) AS n
+            FROM motorcycles
+            WHERE status='Under Maintenance'
+          `).n,
+
+        sold:
+          one(`
+            SELECT
+              COUNT(*) AS n
+            FROM motorcycles
+            WHERE status='Sold / Retired'
+          `).n,
+
+        todayIncome,
+
+        todayExpenses,
+
+        todayNet:
+          Number(todayIncome) -
+          Number(todayExpenses),
+
+        totalIncome: income,
+
+        totalExpenses:
+          expense,
+
+        net:
+          Number(income) -
+          Number(expense)
+      });
+    } catch (error) {
+      console.error(
+        'FLEET SUMMARY ERROR:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Unable to load fleet summary.'
+      });
+    }
   }
 );
 
@@ -2785,56 +4290,111 @@ app.get(
   '/api/alerts',
   auth,
   (req, res) => {
-    const today =
-      new Date()
-        .toISOString()
-        .slice(0, 10);
+    try {
+      const today =
+        new Date()
+          .toISOString()
+          .slice(0, 10);
 
-    const output = [];
+      const output = [];
 
-    rows(`
-      SELECT *
-      FROM motorcycles
-      WHERE status='Under Maintenance'
-    `).forEach((motorcycle) => {
-      output.push({
-        level: 'danger',
-        text:
-          `${motorcycle.code} is under maintenance`
-      });
-    });
-
-    rows(`
-      SELECT *
-      FROM maintenance
-      WHERE next_service IS NOT NULL
-    `).forEach((maintenance) => {
+      /*
+       * Fleet alerts only for D1/D3/D4.
+       */
       if (
-        maintenance.next_service <= today
+        deptOnly(req, ['D3', 'D4'])
       ) {
-        output.push({
-          level: 'warning',
-          text:
-            `${maintenance.motorcycle_id} maintenance service due/overdue`
-        });
+        rows(`
+          SELECT *
+          FROM motorcycles
+          WHERE status='Under Maintenance'
+        `).forEach(
+          (motorcycle) => {
+            output.push({
+              level:
+                'danger',
+              text:
+                `${motorcycle.code} is under maintenance`
+            });
+          }
+        );
+
+        rows(`
+          SELECT *
+          FROM maintenance
+          WHERE next_service IS NOT NULL
+        `).forEach(
+          (maintenance) => {
+            if (
+              maintenance.next_service <=
+              today
+            ) {
+              output.push({
+                level:
+                  'warning',
+                text:
+                  `${maintenance.motorcycle_id} maintenance service due/overdue`
+              });
+            }
+          }
+        );
       }
-    });
 
-    rows(`
-      SELECT *
-      FROM tasks
-      WHERE status <> 'Completed'
-        AND deadline IS NOT NULL
-        AND deadline < ?
-    `, today).forEach((task) => {
-      output.push({
-        level: 'danger',
-        text:
-          `Task overdue: ${task.name}`
-      });
-    });
+      /*
+       * Tasks are always department-filtered.
+       */
+      const overdueTasks =
+        d1(req)
+          ? rows(`
+              SELECT *
+              FROM tasks
+              WHERE status <> 'Completed'
+                AND deadline IS NOT NULL
+                AND deadline < ?
+            `,
+            today)
+          : rows(`
+              SELECT
+                t.*
+              FROM tasks t
+              JOIN users u
+                ON u.id=t.responsible_user
+              WHERE
+                t.status <> 'Completed'
+                AND t.deadline IS NOT NULL
+                AND t.deadline < ?
+                AND (
+                  u.department_id=?
+                  OR t.created_by=?
+                )
+            `,
+            today,
+            req.user.department_id,
+            req.user.id);
 
-    res.json(output);
+      overdueTasks.forEach(
+        (task) => {
+          output.push({
+            level:
+              'danger',
+            text:
+              `Task overdue: ${task.name}`
+          });
+        }
+      );
+
+      res.json(output);
+    } catch (error) {
+      console.error(
+        'ALERTS ERROR:',
+        error
+      );
+
+      /*
+       * Alerts must never break dashboard loading.
+       */
+      res.json([]);
+    }
   }
 );
 
@@ -2845,12 +4405,17 @@ app.get(
 app.use(
   '/uploads',
   auth,
-  express.static(UPLOAD_DIR)
+  express.static(
+    UPLOAD_DIR
+  )
 );
 
 app.use(
   express.static(
-    path.join(ROOT, 'public'),
+    path.join(
+      ROOT,
+      'public'
+    ),
     {
       index: 'index.html'
     }
@@ -2865,7 +4430,8 @@ app.use(
   '/api',
   (req, res) => {
     res.status(404).json({
-      error: 'API endpoint not found'
+      error:
+        'API endpoint not found'
     });
   }
 );
@@ -2883,8 +4449,14 @@ app.use(
         'index.html'
       );
 
-    if (fs.existsSync(indexPath)) {
-      return res.sendFile(indexPath);
+    if (
+      fs.existsSync(
+        indexPath
+      )
+    ) {
+      return res.sendFile(
+        indexPath
+      );
     }
 
     res.status(404).send(
@@ -2899,9 +4471,14 @@ app.use(
 
 app.use(
   (error, req, res, next) => {
-    console.error(error);
+    console.error(
+      'GLOBAL ERROR:',
+      error
+    );
 
-    if (res.headersSent) {
+    if (
+      res.headersSent
+    ) {
       return next(error);
     }
 
