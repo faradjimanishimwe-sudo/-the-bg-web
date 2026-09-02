@@ -271,6 +271,36 @@ CREATE TABLE IF NOT EXISTS daily_closings(
 `);
 
 /* =========================================================
+   SAFE DATABASE MIGRATIONS
+========================================================= */
+
+try {
+  const taskColumns = db
+    .prepare('PRAGMA table_info(tasks)')
+    .all();
+
+  const hasRejectionReason =
+    taskColumns.some(
+      (column) =>
+        column.name === 'rejection_reason'
+    );
+
+  if (!hasRejectionReason) {
+    db.exec(`
+      ALTER TABLE tasks
+      ADD COLUMN rejection_reason TEXT
+    `);
+  }
+} catch (error) {
+  console.error(
+    'TASK MIGRATION ERROR:',
+    error
+  );
+
+  throw error;
+}
+
+/* =========================================================
    DEPARTMENTS
 ========================================================= */
 
@@ -313,7 +343,9 @@ const upDept = db.prepare(`
   VALUES (?, ?, ?, ?)
 `);
 
-departments.forEach((d) => upDept.run(...d));
+departments.forEach((d) => {
+  upDept.run(...d);
+});
 
 /* =========================================================
    INITIAL USERS
@@ -364,9 +396,11 @@ if (userCount === 0) {
    MIDDLEWARE
 ========================================================= */
 
-app.use(express.json({
-  limit: '2mb'
-}));
+app.use(
+  express.json({
+    limit: '2mb'
+  })
+);
 
 app.use(
   express.urlencoded({
@@ -472,9 +506,15 @@ const upload = multer({
 
     filename: (req, file, cb) => {
       const safeExt =
-        path.extname(
-          file.originalname
-        ).toLowerCase();
+        path
+          .extname(
+            file.originalname
+          )
+          .toLowerCase()
+          .replace(
+            /[^a-z0-9.]/gi,
+            ''
+          );
 
       cb(
         null,
@@ -486,9 +526,11 @@ const upload = multer({
   }),
 
   fileFilter: (req, file, cb) => {
-    if (!allowedMime.has(
-      file.mimetype
-    )) {
+    if (
+      !allowedMime.has(
+        file.mimetype
+      )
+    ) {
       return cb(
         new Error(
           'File type is not allowed.'
@@ -500,7 +542,8 @@ const upload = multer({
   },
 
   limits: {
-    fileSize: 10 * 1024 * 1024
+    fileSize:
+      10 * 1024 * 1024
   }
 });
 
@@ -514,7 +557,9 @@ function auth(req, res, next) {
       req.cookies.bg_token;
 
     if (!token) {
-      throw new Error('No token');
+      throw new Error(
+        'No token'
+      );
     }
 
     req.user = jwt.verify(
@@ -548,7 +593,8 @@ function auth(req, res, next) {
     req.user = {
       id: currentUser.id,
       name: currentUser.name,
-      username: currentUser.username,
+      username:
+        currentUser.username,
       department_id:
         currentUser.department_id
     };
@@ -556,35 +602,53 @@ function auth(req, res, next) {
     next();
   } catch (error) {
     return res.status(401).json({
-      error: 'Not authenticated'
+      error:
+        'Not authenticated'
     });
   }
 }
 
 function d1(req) {
   return (
-    req.user.department_id === 'D1'
+    req.user.department_id ===
+    'D1'
   );
 }
 
-function hasDept(req, departments) {
+function hasDept(
+  req,
+  departments
+) {
   return departments.includes(
     req.user.department_id
   );
 }
 
-function deptOnly(req, departments) {
+function deptOnly(
+  req,
+  departments
+) {
   return (
     d1(req) ||
-    hasDept(req, departments)
+    hasDept(
+      req,
+      departments
+    )
   );
 }
 
-function sameDept(req, userId) {
+function sameDept(
+  req,
+  userId
+) {
   const numericId =
     Number(userId);
 
-  if (!Number.isInteger(numericId)) {
+  if (
+    !Number.isInteger(
+      numericId
+    )
+  ) {
     return false;
   }
 
@@ -612,9 +676,13 @@ function sameDept(req, userId) {
 }
 
 function userExists(userId) {
-  const id = Number(userId);
+  const id = Number(
+    userId
+  );
 
-  if (!Number.isInteger(id)) {
+  if (
+    !Number.isInteger(id)
+  ) {
     return null;
   }
 
@@ -636,10 +704,13 @@ function userExists(userId) {
 function motorcycleExists(
   motorcycleId
 ) {
-  const id =
-    Number(motorcycleId);
+  const id = Number(
+    motorcycleId
+  );
 
-  if (!Number.isInteger(id)) {
+  if (
+    !Number.isInteger(id)
+  ) {
     return null;
   }
 
@@ -734,7 +805,8 @@ app.post(
       );
 
       return res.status(401).json({
-        error: 'Invalid login'
+        error:
+          'Invalid login'
       });
     }
 
@@ -742,19 +814,21 @@ app.post(
       req._loginKey
     );
 
-    const token = jwt.sign(
-      {
-        id: u.id,
-        name: u.name,
-        username: u.username,
-        department_id:
-          u.department_id
-      },
-      EFFECTIVE_JWT_SECRET,
-      {
-        expiresIn: '7d'
-      }
-    );
+    const token =
+      jwt.sign(
+        {
+          id: u.id,
+          name: u.name,
+          username:
+            u.username,
+          department_id:
+            u.department_id
+        },
+        EFFECTIVE_JWT_SECRET,
+        {
+          expiresIn: '7d'
+        }
+      );
 
     res.cookie(
       'bg_token',
@@ -763,10 +837,15 @@ app.post(
         httpOnly: true,
         sameSite: 'lax',
         secure:
-          NODE_ENV === 'production',
+          NODE_ENV ===
+          'production',
         path: '/',
         maxAge:
-          7 * 24 * 60 * 60 * 1000
+          7 *
+          24 *
+          60 *
+          60 *
+          1000
       }
     );
 
@@ -774,7 +853,8 @@ app.post(
       user: {
         id: u.id,
         name: u.name,
-        username: u.username,
+        username:
+          u.username,
         department_id:
           u.department_id
       }
@@ -795,7 +875,8 @@ app.post(
         httpOnly: true,
         sameSite: 'lax',
         secure:
-          NODE_ENV === 'production',
+          NODE_ENV ===
+          'production',
         path: '/'
       }
     );
@@ -811,8 +892,10 @@ app.get(
   (req, res) => {
     res.json({
       ok: true,
-      service: 'THE BG WEB',
-      environment: NODE_ENV
+      service:
+        'THE BG WEB',
+      environment:
+        NODE_ENV
     });
   }
 );
@@ -830,7 +913,8 @@ app.get(
         FROM departments
         WHERE id=?
         `,
-        req.user.department_id
+        req.user
+          .department_id
       )
     });
   }
@@ -838,8 +922,6 @@ app.get(
 
 /* =========================================================
    BOOTSTRAP
-   IMPORTANT:
-   Department filtering happens HERE.
 ========================================================= */
 
 app.get(
@@ -850,15 +932,16 @@ app.get(
       const dept =
         req.user.department_id;
 
-      const isD1 = dept === 'D1';
-      const isD2 = dept === 'D2';
-      const isD3 = dept === 'D3';
-      const isD4 = dept === 'D4';
-      const isD5 = dept === 'D5';
-
-      /* ---------------------------------------------------
-         USERS
-      --------------------------------------------------- */
+      const isD1 =
+        dept === 'D1';
+      const isD2 =
+        dept === 'D2';
+      const isD3 =
+        dept === 'D3';
+      const isD4 =
+        dept === 'D4';
+      const isD5 =
+        dept === 'D5';
 
       const users = isD1
         ? rows(`
@@ -887,40 +970,41 @@ app.get(
           req.user.id
         );
 
-      /* ---------------------------------------------------
-         TASKS
-      --------------------------------------------------- */
-
       const tasks = isD1
         ? rows(`
             SELECT
               t.*,
               u.name AS responsible_name,
-              u.department_id AS responsible_department
+              u.department_id
+                AS responsible_department
             FROM tasks t
             JOIN users u
-              ON u.id=t.responsible_user
-            ORDER BY t.id DESC
+              ON u.id=
+                 t.responsible_user
+            ORDER BY
+              t.id DESC
           `)
         : rows(`
             SELECT
               t.*,
               u.name AS responsible_name,
-              u.department_id AS responsible_department
+              u.department_id
+                AS responsible_department
             FROM tasks t
             JOIN users u
-              ON u.id=t.responsible_user
-            WHERE u.department_id=?
-               OR t.created_by=?
-            ORDER BY t.id DESC
+              ON u.id=
+                 t.responsible_user
+            WHERE
+              u.department_id=?
+              OR t.created_by=?
+              OR t.responsible_user=?
+            ORDER BY
+              t.id DESC
           `,
           dept,
+          req.user.id,
           req.user.id
         );
-
-      /* ---------------------------------------------------
-         REPORTS
-      --------------------------------------------------- */
 
       const reports = isD1
         ? rows(`
@@ -932,7 +1016,8 @@ app.get(
             FROM reports r
             JOIN users u
               ON u.id=r.user_id
-            ORDER BY r.id DESC
+            ORDER BY
+              r.id DESC
           `)
         : rows(`
             SELECT
@@ -943,22 +1028,20 @@ app.get(
             FROM reports r
             JOIN users u
               ON u.id=r.user_id
-            WHERE u.department_id=?
-               OR r.user_id=?
-            ORDER BY r.id DESC
+            WHERE
+              u.department_id=?
+              OR r.user_id=?
+            ORDER BY
+              r.id DESC
           `,
           dept,
           req.user.id
         );
 
-      /* ---------------------------------------------------
-         MOTORCYCLES
-         D1 / D3 / D4 may see fleet asset information.
-         D2 / D5 do not receive private fleet records.
-      --------------------------------------------------- */
-
       const motorcycles =
-        isD1 || isD3 || isD4
+        isD1 ||
+        isD3 ||
+        isD4
           ? rows(`
               SELECT *
               FROM motorcycles
@@ -966,190 +1049,242 @@ app.get(
             `)
           : [];
 
-      /* ---------------------------------------------------
-         INCOME
-         D1 + D3 full financial view.
-         D4 operations view.
-      --------------------------------------------------- */
-
       const income =
-        isD1 || isD3
+        isD1 ||
+        isD3
           ? rows(`
               SELECT
                 i.*,
-                m.code AS motorcycle_code,
-                u.name AS entered_name,
-                u.department_id AS entered_department
+                m.code
+                  AS motorcycle_code,
+                u.name
+                  AS entered_name,
+                u.department_id
+                  AS entered_department
               FROM income i
               JOIN motorcycles m
-                ON m.id=i.motorcycle_id
+                ON m.id=
+                   i.motorcycle_id
               JOIN users u
-                ON u.id=i.entered_by
-              ORDER BY i.date DESC, i.id DESC
+                ON u.id=
+                   i.entered_by
+              ORDER BY
+                i.date DESC,
+                i.id DESC
             `)
           : isD4
             ? rows(`
                 SELECT
                   i.*,
-                  m.code AS motorcycle_code,
-                  u.name AS entered_name,
-                  u.department_id AS entered_department
+                  m.code
+                    AS motorcycle_code,
+                  u.name
+                    AS entered_name,
+                  u.department_id
+                    AS entered_department
                 FROM income i
                 JOIN motorcycles m
-                  ON m.id=i.motorcycle_id
+                  ON m.id=
+                     i.motorcycle_id
                 JOIN users u
-                  ON u.id=i.entered_by
-                WHERE i.entered_by=?
-                   OR u.department_id='D4'
-                ORDER BY i.date DESC, i.id DESC
+                  ON u.id=
+                     i.entered_by
+                WHERE
+                  i.entered_by=?
+                  OR u.department_id='D4'
+                ORDER BY
+                  i.date DESC,
+                  i.id DESC
               `,
               req.user.id)
             : [];
 
-      /* ---------------------------------------------------
-         EXPENSES
-      --------------------------------------------------- */
-
       const expenses =
-        isD1 || isD3
+        isD1 ||
+        isD3
           ? rows(`
               SELECT
                 e.*,
-                m.code AS motorcycle_code,
-                u.name AS entered_name,
-                u.department_id AS entered_department
+                m.code
+                  AS motorcycle_code,
+                u.name
+                  AS entered_name,
+                u.department_id
+                  AS entered_department
               FROM expenses e
               LEFT JOIN motorcycles m
-                ON m.id=e.motorcycle_id
+                ON m.id=
+                   e.motorcycle_id
               JOIN users u
-                ON u.id=e.entered_by
-              ORDER BY e.date DESC, e.id DESC
+                ON u.id=
+                   e.entered_by
+              ORDER BY
+                e.date DESC,
+                e.id DESC
             `)
           : isD4
             ? rows(`
                 SELECT
                   e.*,
-                  m.code AS motorcycle_code,
-                  u.name AS entered_name,
-                  u.department_id AS entered_department
+                  m.code
+                    AS motorcycle_code,
+                  u.name
+                    AS entered_name,
+                  u.department_id
+                    AS entered_department
                 FROM expenses e
                 LEFT JOIN motorcycles m
-                  ON m.id=e.motorcycle_id
+                  ON m.id=
+                     e.motorcycle_id
                 JOIN users u
-                  ON u.id=e.entered_by
-                WHERE e.entered_by=?
-                   OR u.department_id='D4'
-                ORDER BY e.date DESC, e.id DESC
+                  ON u.id=
+                     e.entered_by
+                WHERE
+                  e.entered_by=?
+                  OR u.department_id='D4'
+                ORDER BY
+                  e.date DESC,
+                  e.id DESC
               `,
               req.user.id)
             : [];
 
-      /* ---------------------------------------------------
-         MAINTENANCE
-      --------------------------------------------------- */
-
       const maintenance =
-        isD1 || isD3 || isD4
+        isD1 ||
+        isD3 ||
+        isD4
           ? rows(`
               SELECT
                 m.*,
-                x.code AS motorcycle_code
+                x.code
+                  AS motorcycle_code
               FROM maintenance m
               JOIN motorcycles x
-                ON x.id=m.motorcycle_id
+                ON x.id=
+                   m.motorcycle_id
               ORDER BY
                 m.date DESC,
                 m.id DESC
             `)
           : [];
 
-      /* ---------------------------------------------------
-         AUDIT
-      --------------------------------------------------- */
-
       const audit =
         isD1
           ? rows(`
               SELECT
                 a.*,
-                u.name AS user_name,
+                u.name
+                  AS user_name,
                 u.department_id
                   AS user_department
               FROM audit a
               LEFT JOIN users u
                 ON u.id=a.who_user
-              ORDER BY a.id DESC
+              ORDER BY
+                a.id DESC
               LIMIT 1000
             `)
           : rows(`
               SELECT
                 a.*,
-                u.name AS user_name,
+                u.name
+                  AS user_name,
                 u.department_id
                   AS user_department
               FROM audit a
               LEFT JOIN users u
                 ON u.id=a.who_user
-              WHERE a.who_user=?
-                 OR u.department_id=?
-              ORDER BY a.id DESC
+              WHERE
+                a.who_user=?
+                OR u.department_id=?
+              ORDER BY
+                a.id DESC
               LIMIT 500
             `,
             req.user.id,
             dept
           );
 
-      /* ---------------------------------------------------
-         FINANCE CHANGES
-      --------------------------------------------------- */
-
       const changes =
-        isD1 || isD3 || isD4
+        isD1 ||
+        isD3 ||
+        isD4
           ? rows(`
               SELECT
                 f.*,
-                u.name AS requested_name,
+                u.name
+                  AS requested_name,
                 u.department_id
                   AS requested_department
               FROM finance_changes f
               JOIN users u
-                ON u.id=f.requested_by
+                ON u.id=
+                   f.requested_by
               WHERE
-                f.status='Pending Approval'
+                f.status=
+                  'Pending Approval'
                 AND (
                   ?='D1'
                   OR u.department_id=?
                   OR f.requested_by=?
                 )
-              ORDER BY f.id DESC
+              ORDER BY
+                f.id DESC
             `,
             dept,
             dept,
             req.user.id)
           : [];
 
+      /*
+       * Always return all expected arrays.
+       * This prevents frontend "Load failed"
+       * errors caused by missing properties.
+       */
       res.json({
-        departments: rows(
-          'SELECT * FROM departments'
-        ),
+        departments:
+          rows(
+            'SELECT * FROM departments'
+          ),
 
-        users,
+        users:
+          users || [],
 
-        motorcycles,
+        motorcycles:
+          motorcycles || [],
 
-        tasks,
+        tasks:
+          tasks || [],
 
-        reports,
+        reports:
+          reports || [],
 
-        income,
+        income:
+          income || [],
 
-        expenses,
+        expenses:
+          expenses || [],
 
-        maintenance,
+        maintenance:
+          maintenance || [],
 
-        audit,
+        audit:
+          audit || [],
 
-        changes
+        changes:
+          changes || [],
+
+        activities: [],
+
+        goals: [],
+
+        assignments: [],
+
+        odometer: [],
+
+        dailyClosings: [],
+
+        evidence: []
       });
     } catch (error) {
       console.error(
@@ -1157,14 +1292,10 @@ app.get(
         error
       );
 
-      /*
-       * IMPORTANT:
-       * Always return valid JSON instead of allowing
-       * the frontend to receive an HTML/empty response.
-       */
       return res.status(500).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to load dashboard data.'
             : `Bootstrap failed: ${error.message}`
       });
@@ -1181,7 +1312,10 @@ app.post(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D4'])
+      !deptOnly(
+        req,
+        ['D4']
+      )
     ) {
       return res.status(403).json({
         error:
@@ -1213,7 +1347,8 @@ app.post(
 
     const purchasePrice =
       Number(
-        req.body.purchase_price || 0
+        req.body.purchase_price ||
+          0
       );
 
     const status =
@@ -1327,7 +1462,8 @@ app.post(
 
       return res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to register motorcycle.'
             : error.message
       });
@@ -1344,7 +1480,10 @@ app.post(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D4'])
+      !deptOnly(
+        req,
+        ['D4']
+      )
     ) {
       return res.status(403).json({
         error:
@@ -1409,7 +1548,8 @@ app.post(
 
     res.json({
       ok: true,
-      motorcycle: changed
+      motorcycle:
+        changed
     });
   }
 );
@@ -1423,7 +1563,10 @@ app.post(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D4'])
+      !deptOnly(
+        req,
+        ['D4']
+      )
     ) {
       return res.status(403).json({
         error:
@@ -1529,7 +1672,8 @@ app.post(
 
       res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to save income.'
             : error.message
       });
@@ -1546,7 +1690,10 @@ app.post(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D3'])
+      !deptOnly(
+        req,
+        ['D3']
+      )
     ) {
       return res.status(403).json({
         error:
@@ -1601,7 +1748,10 @@ app.post(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D3', 'D4'])
+      !deptOnly(
+        req,
+        ['D3', 'D4']
+      )
     ) {
       return res.status(403).json({
         error:
@@ -1728,7 +1878,8 @@ app.post(
 
       res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to save expense.'
             : error.message
       });
@@ -1737,7 +1888,7 @@ app.post(
 );
 
 /* =========================================================
-   TASKS
+   TASKS - CREATE
 ========================================================= */
 
 app.post(
@@ -1809,7 +1960,8 @@ app.post(
 
     /*
      * D1 can assign across departments.
-     * Everyone else can assign only inside their department.
+     * D2-D5 can assign only within
+     * their own department.
      */
     if (
       !d1(req) &&
@@ -1848,9 +2000,10 @@ app.post(
             priority,
             description,
             status,
-            created_by
+            created_by,
+            rejection_reason
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           name,
           responsibleUser,
@@ -1859,7 +2012,8 @@ app.post(
           finalPriority,
           description,
           'Not Started',
-          req.user.id
+          req.user.id,
+          null
         );
 
       const task =
@@ -1867,12 +2021,14 @@ app.post(
           `
           SELECT
             t.*,
-            u.name AS responsible_name,
+            u.name
+              AS responsible_name,
             u.department_id
               AS responsible_department
           FROM tasks t
           JOIN users u
-            ON u.id=t.responsible_user
+            ON u.id=
+               t.responsible_user
           WHERE t.id=?
           `,
           result.lastInsertRowid
@@ -1901,13 +2057,18 @@ app.post(
 
       return res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to create task.'
             : error.message
       });
     }
   }
 );
+
+/* =========================================================
+   TASKS - UPDATE / WORKFLOW
+========================================================= */
 
 app.patch(
   '/api/tasks/:id',
@@ -1931,30 +2092,32 @@ app.patch(
         task.responsible_user
       );
 
-    const createdBy =
-      userExists(
+    const isD1 =
+      d1(req);
+
+    const isResponsible =
+      Number(
+        task.responsible_user
+      ) ===
+      Number(req.user.id);
+
+    const isCreator =
+      Number(
         task.created_by
-      );
+      ) ===
+      Number(req.user.id);
 
     /*
-     * D1: everything.
-     * Responsible person: can update own task.
-     * Creator: can update task they created.
-     * Same department can access department task.
+     * IMPORTANT SECURITY RULE:
+     * Being in the same department does NOT
+     * automatically give permission to modify
+     * another person's task.
      */
-    const allowed =
-      d1(req) ||
-      task.responsible_user ===
-        req.user.id ||
-      task.created_by ===
-        req.user.id ||
-      (
-        responsible &&
-        responsible.department_id ===
-          req.user.department_id
-      );
-
-    if (!allowed) {
+    if (
+      !isD1 &&
+      !isResponsible &&
+      !isCreator
+    ) {
       return res.status(403).json({
         error:
           'You are not permitted to update this task.'
@@ -1962,11 +2125,21 @@ app.patch(
     }
 
     const status =
-      req.body.status ||
-      task.status;
+      String(
+        req.body.status ||
+          task.status
+      );
+
+    const reason =
+      String(
+        req.body.reason ||
+          ''
+      ).trim();
 
     const allowedStatuses = [
       'Not Started',
+      'Accepted',
+      'Rejected',
       'In Progress',
       'Completed',
       'Cancelled',
@@ -1984,13 +2157,237 @@ app.patch(
       });
     }
 
+    /*
+     * No change requested.
+     */
+    if (
+      status === task.status &&
+      !reason
+    ) {
+      return res.json({
+        ok: true,
+        task
+      });
+    }
+
+    /*
+     * D1 has full control.
+     * However, rejection still requires
+     * a reason and normal workflow rules
+     * are kept where possible.
+     */
+    if (status === 'Rejected') {
+      if (!reason) {
+        return res.status(400).json({
+          error:
+            'A rejection reason is required.'
+        });
+      }
+
+      if (
+        !isD1 &&
+        !isResponsible
+      ) {
+        return res.status(403).json({
+          error:
+            'Only the responsible person or D1 can reject this task.'
+        });
+      }
+
+      if (
+        task.status !==
+        'Not Started' &&
+        !isD1
+      ) {
+        return res.status(400).json({
+          error:
+            'A task can only be rejected while it is Not Started.'
+        });
+      }
+    }
+
+    /*
+     * Accept:
+     * Only responsible user or D1.
+     * Normal user can accept only from
+     * Not Started.
+     */
+    if (status === 'Accepted') {
+      if (
+        !isD1 &&
+        !isResponsible
+      ) {
+        return res.status(403).json({
+          error:
+            'Only the responsible person or D1 can accept this task.'
+        });
+      }
+
+      if (
+        !isD1 &&
+        task.status !==
+          'Not Started'
+      ) {
+        return res.status(400).json({
+          error:
+            'A task can only be accepted while it is Not Started.'
+        });
+      }
+    }
+
+    /*
+     * Start:
+     * Responsible user or D1.
+     */
+    if (
+      status ===
+      'In Progress'
+    ) {
+      if (
+        !isD1 &&
+        !isResponsible
+      ) {
+        return res.status(403).json({
+          error:
+            'Only the responsible person or D1 can start this task.'
+        });
+      }
+
+      if (
+        !isD1 &&
+        task.status !==
+          'Accepted'
+      ) {
+        return res.status(400).json({
+          error:
+            'Accept the task before starting work.'
+        });
+      }
+    }
+
+    /*
+     * Complete:
+     * Responsible user or D1.
+     */
+    if (
+      status ===
+      'Completed'
+    ) {
+      if (
+        !isD1 &&
+        !isResponsible
+      ) {
+        return res.status(403).json({
+          error:
+            'Only the responsible person or D1 can complete this task.'
+        });
+      }
+
+      if (
+        !isD1 &&
+        task.status !==
+          'In Progress'
+      ) {
+        return res.status(400).json({
+          error:
+            'The task must be In Progress before it can be completed.'
+        });
+      }
+    }
+
+    /*
+     * Cancel:
+     * D1 has authority.
+     * Creator may cancel a task they created
+     * before it is completed.
+     */
+    if (
+      status ===
+      'Cancelled'
+    ) {
+      if (
+        !isD1 &&
+        !isCreator
+      ) {
+        return res.status(403).json({
+          error:
+            'Only D1 or the task creator can cancel this task.'
+        });
+      }
+    }
+
+    /*
+     * On Hold:
+     * D1 or responsible user.
+     */
+    if (
+      status ===
+      'On Hold'
+    ) {
+      if (
+        !isD1 &&
+        !isResponsible
+      ) {
+        return res.status(403).json({
+          error:
+            'Only D1 or the responsible person can put this task On Hold.'
+        });
+      }
+    }
+
+    /*
+     * Not Started should normally be
+     * restored only by D1.
+     */
+    if (
+      status ===
+      'Not Started' &&
+      !isD1
+    ) {
+      return res.status(403).json({
+        error:
+          'Only D1 can reset a task to Not Started.'
+      });
+    }
+
+    /*
+     * Prevent meaningless reversal by normal users.
+     */
+    if (
+      !isD1 &&
+      task.status ===
+        'Completed' &&
+      status !==
+        'Completed'
+    ) {
+      return res.status(400).json({
+        error:
+          'A completed task cannot be changed by the responsible user.'
+      });
+    }
+
+    const changed = {
+      ...task,
+      status,
+      rejection_reason:
+        status === 'Rejected'
+          ? reason
+          : status !==
+            'Rejected'
+            ? null
+            : task.rejection_reason
+    };
+
     try {
       db.prepare(`
         UPDATE tasks
-        SET status=?
+        SET
+          status=?,
+          rejection_reason=?
         WHERE id=?
       `).run(
         status,
+        changed.rejection_reason,
         task.id
       );
 
@@ -2000,18 +2397,32 @@ app.patch(
         'Task',
         task.id,
         task,
-        {
-          ...task,
-          status
-        }
+        changed,
+        reason
       );
+
+      const updated =
+        one(
+          `
+          SELECT
+            t.*,
+            u.name
+              AS responsible_name,
+            u.department_id
+              AS responsible_department
+          FROM tasks t
+          JOIN users u
+            ON u.id=
+               t.responsible_user
+          WHERE t.id=?
+          `,
+          task.id
+        );
 
       res.json({
         ok: true,
-        task: {
-          ...task,
-          status
-        }
+        task:
+          updated
       });
     } catch (error) {
       console.error(
@@ -2021,7 +2432,8 @@ app.patch(
 
       res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to update task.'
             : error.message
       });
@@ -2055,7 +2467,10 @@ app.post(
             .slice(0, 10)
       );
 
-    if (!type || !body) {
+    if (
+      !type ||
+      !body
+    ) {
       return res.status(400).json({
         error:
           'Report type and body are required.'
@@ -2106,7 +2521,8 @@ app.post(
 
       res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to save report.'
             : error.message
       });
@@ -2129,6 +2545,24 @@ app.post(
           .toISOString()
           .slice(0, 10);
 
+      const timeSpent =
+        Number(
+          req.body.time_spent ||
+            0
+        );
+
+      if (
+        !Number.isFinite(
+          timeSpent
+        ) ||
+        timeSpent < 0
+      ) {
+        return res.status(400).json({
+          error:
+            'Invalid time spent.'
+        });
+      }
+
       const result =
         db.prepare(`
           INSERT INTO activities
@@ -2145,11 +2579,11 @@ app.post(
           req.user.id,
           date,
           req.body.done || '',
-          req.body.unfinished || '',
-          req.body.reason || '',
-          Number(
-            req.body.time_spent || 0
-          )
+          req.body.unfinished ||
+            '',
+          req.body.reason ||
+            '',
+          timeSpent
         );
 
       log(
@@ -2174,7 +2608,8 @@ app.post(
 
       res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to save activity.'
             : error.message
       });
@@ -2208,19 +2643,23 @@ app.get(
               FROM activities a
               JOIN users u
                 ON u.id=a.user_id
-              WHERE u.department_id=?
-                 OR a.user_id=?
+              WHERE
+                u.department_id=?
+                OR a.user_id=?
               ORDER BY a.id DESC
             `,
           ...(d1(req)
             ? []
             : [
-                req.user.department_id,
+                req.user
+                  .department_id,
                 req.user.id
               ])
         );
 
-      res.json(data);
+      res.json(
+        data || []
+      );
     } catch (error) {
       console.error(
         'ACTIVITIES LOAD ERROR:',
@@ -2250,19 +2689,23 @@ app.get(
             ? `
               SELECT
                 g.*,
-                u.name AS creator_name
+                u.name
+                  AS creator_name
               FROM goals g
               JOIN users u
-                ON u.id=g.created_by
+                ON u.id=
+                   g.created_by
               ORDER BY g.id DESC
             `
             : `
               SELECT
                 g.*,
-                u.name AS creator_name
+                u.name
+                  AS creator_name
               FROM goals g
               JOIN users u
-                ON u.id=g.created_by
+                ON u.id=
+                   g.created_by
               WHERE
                 g.department_id=?
                 OR g.department_id IS NULL
@@ -2272,7 +2715,8 @@ app.get(
           ...(d1(req)
             ? []
             : [
-                req.user.department_id,
+                req.user
+                  .department_id,
                 req.user.id
               ])
         )
@@ -2297,14 +2741,19 @@ app.post(
   (req, res) => {
     const {
       title,
-      scope = 'Department',
+      scope =
+        'Department',
       department_id,
       target = 100,
       achieved = 0,
       period = ''
     } = req.body;
 
-    if (!title) {
+    if (
+      !String(
+        title || ''
+      ).trim()
+    ) {
       return res.status(400).json({
         error:
           'Title required.'
@@ -2338,6 +2787,28 @@ app.post(
       });
     }
 
+    const targetNumber =
+      Number(target);
+
+    const achievedNumber =
+      Number(achieved);
+
+    if (
+      !Number.isFinite(
+        targetNumber
+      ) ||
+      targetNumber < 0 ||
+      !Number.isFinite(
+        achievedNumber
+      ) ||
+      achievedNumber < 0
+    ) {
+      return res.status(400).json({
+        error:
+          'Invalid goal numbers.'
+      });
+    }
+
     try {
       const result =
         db.prepare(`
@@ -2353,11 +2824,11 @@ app.post(
           )
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(
-          title,
+          String(title).trim(),
           scope,
           dept,
-          Number(target),
-          Number(achieved),
+          targetNumber,
+          achievedNumber,
           period,
           req.user.id
         );
@@ -2384,7 +2855,8 @@ app.post(
 
       res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to save goal.'
             : error.message
       });
@@ -2444,6 +2916,24 @@ app.patch(
             )
     };
 
+    if (
+      !Number.isFinite(
+        Number(next.target)
+      ) ||
+      Number(next.target) <
+        0 ||
+      !Number.isFinite(
+        Number(next.achieved)
+      ) ||
+      Number(next.achieved) <
+        0
+    ) {
+      return res.status(400).json({
+        error:
+          'Invalid goal values.'
+      });
+    }
+
     try {
       db.prepare(`
         UPDATE goals
@@ -2454,8 +2944,8 @@ app.patch(
         WHERE id=?
       `).run(
         next.title,
-        next.target,
-        next.achieved,
+        Number(next.target),
+        Number(next.achieved),
         goal.id
       );
 
@@ -2470,7 +2960,8 @@ app.patch(
 
       res.json({
         ok: true,
-        goal: next
+        goal:
+          next
       });
     } catch (error) {
       console.error(
@@ -2480,7 +2971,8 @@ app.patch(
 
       res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to update goal.'
             : error.message
       });
@@ -2497,7 +2989,10 @@ app.get(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D4'])
+      !deptOnly(
+        req,
+        ['D4']
+      )
     ) {
       return res.json([]);
     }
@@ -2507,10 +3002,12 @@ app.get(
         rows(`
           SELECT
             a.*,
-            m.code AS motorcycle_code
+            m.code
+              AS motorcycle_code
           FROM assignments a
           JOIN motorcycles m
-            ON m.id=a.motorcycle_id
+            ON m.id=
+               a.motorcycle_id
           ORDER BY a.id DESC
         `)
       );
@@ -2533,7 +3030,10 @@ app.post(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D4'])
+      !deptOnly(
+        req,
+        ['D4']
+      )
     ) {
       return res.status(403).json({
         error:
@@ -2652,7 +3152,8 @@ app.post(
 
       res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to save assignment.'
             : error.message
       });
@@ -2669,7 +3170,10 @@ app.post(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D4'])
+      !deptOnly(
+        req,
+        ['D4']
+      )
     ) {
       return res.status(403).json({
         error:
@@ -2782,7 +3286,8 @@ app.post(
 
       res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to save odometer.'
             : error.message
       });
@@ -2795,7 +3300,10 @@ app.get(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D4'])
+      !deptOnly(
+        req,
+        ['D4']
+      )
     ) {
       return res.json([]);
     }
@@ -2805,13 +3313,17 @@ app.get(
         rows(`
           SELECT
             o.*,
-            m.code AS motorcycle_code,
-            u.name AS entered_name
+            m.code
+              AS motorcycle_code,
+            u.name
+              AS entered_name
           FROM odometer o
           JOIN motorcycles m
-            ON m.id=o.motorcycle_id
+            ON m.id=
+               o.motorcycle_id
           JOIN users u
-            ON u.id=o.entered_by
+            ON u.id=
+               o.entered_by
           ORDER BY
             o.date DESC,
             o.id DESC
@@ -2840,7 +3352,10 @@ app.post(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D4'])
+      !deptOnly(
+        req,
+        ['D4']
+      )
     ) {
       return res.status(403).json({
         error:
@@ -2865,8 +3380,9 @@ app.post(
 
     const mileage =
       req.body.mileage ===
-      undefined ||
-      req.body.mileage === ''
+        undefined ||
+      req.body.mileage ===
+        ''
         ? null
         : Number(
             req.body.mileage
@@ -2947,7 +3463,9 @@ app.post(
     }
 
     if (
-      !Number.isFinite(cost) ||
+      !Number.isFinite(
+        cost
+      ) ||
       cost < 0
     ) {
       return res.status(400).json({
@@ -3060,7 +3578,8 @@ app.post(
 
       res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to save maintenance record.'
             : error.message
       });
@@ -3073,7 +3592,10 @@ app.get(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D4'])
+      !deptOnly(
+        req,
+        ['D4']
+      )
     ) {
       return res.json([]);
     }
@@ -3083,10 +3605,12 @@ app.get(
         rows(`
           SELECT
             m.*,
-            x.code AS motorcycle_code
+            x.code
+              AS motorcycle_code
           FROM maintenance m
           JOIN motorcycles x
-            ON x.id=m.motorcycle_id
+            ON x.id=
+               m.motorcycle_id
           ORDER BY
             m.date DESC,
             m.id DESC
@@ -3115,7 +3639,10 @@ app.get(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D3', 'D4'])
+      !deptOnly(
+        req,
+        ['D3', 'D4']
+      )
     ) {
       return res.status(403).json({
         error:
@@ -3124,7 +3651,9 @@ app.get(
     }
 
     const id =
-      Number(req.params.id);
+      Number(
+        req.params.id
+      );
 
     if (
       !Number.isInteger(id)
@@ -3149,62 +3678,76 @@ app.get(
       res.json({
         motorcycle,
 
-        income: rows(`
-          SELECT
-            i.*,
-            u.name AS entered_name
-          FROM income i
-          JOIN users u
-            ON u.id=i.entered_by
-          WHERE i.motorcycle_id=?
-          ORDER BY
-            i.date DESC,
-            i.id DESC
-        `, id),
+        income:
+          rows(`
+            SELECT
+              i.*,
+              u.name
+                AS entered_name
+            FROM income i
+            JOIN users u
+              ON u.id=
+                 i.entered_by
+            WHERE
+              i.motorcycle_id=?
+            ORDER BY
+              i.date DESC,
+              i.id DESC
+          `, id),
 
-        expenses: rows(`
-          SELECT
-            e.*,
-            u.name AS entered_name
-          FROM expenses e
-          JOIN users u
-            ON u.id=e.entered_by
-          WHERE e.motorcycle_id=?
-          ORDER BY
-            e.date DESC,
-            e.id DESC
-        `, id),
+        expenses:
+          rows(`
+            SELECT
+              e.*,
+              u.name
+                AS entered_name
+            FROM expenses e
+            JOIN users u
+              ON u.id=
+                 e.entered_by
+            WHERE
+              e.motorcycle_id=?
+            ORDER BY
+              e.date DESC,
+              e.id DESC
+          `, id),
 
-        maintenance: rows(`
-          SELECT *
-          FROM maintenance
-          WHERE motorcycle_id=?
-          ORDER BY
-            date DESC,
-            id DESC
-        `, id),
+        maintenance:
+          rows(`
+            SELECT *
+            FROM maintenance
+            WHERE motorcycle_id=?
+            ORDER BY
+              date DESC,
+              id DESC
+          `, id),
 
-        odometer: rows(`
-          SELECT
-            o.*,
-            u.name AS entered_name
-          FROM odometer o
-          JOIN users u
-            ON u.id=o.entered_by
-          WHERE o.motorcycle_id=?
-          ORDER BY
-            date DESC,
-            id DESC
-        `, id),
+        odometer:
+          rows(`
+            SELECT
+              o.*,
+              u.name
+                AS entered_name
+            FROM odometer o
+            JOIN users u
+              ON u.id=
+                 o.entered_by
+            WHERE
+              o.motorcycle_id=?
+            ORDER BY
+              date DESC,
+              id DESC
+          `, id),
 
-        assignments: rows(`
-          SELECT *
-          FROM assignments
-          WHERE motorcycle_id=?
-          ORDER BY
-            start_date DESC,
-            id DESC
-        `, id)
+        assignments:
+          rows(`
+            SELECT *
+            FROM assignments
+            WHERE motorcycle_id=?
+            ORDER BY
+              start_date DESC,
+              id DESC
+          `, id)
       });
     } catch (error) {
       console.error(
@@ -3229,7 +3772,10 @@ app.post(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D4'])
+      !deptOnly(
+        req,
+        ['D4']
+      )
     ) {
       return res.status(403).json({
         error:
@@ -3238,10 +3784,12 @@ app.post(
     }
 
     const date =
-      req.body.date ||
-      new Date()
-        .toISOString()
-        .slice(0, 10);
+      String(
+        req.body.date ||
+          new Date()
+            .toISOString()
+            .slice(0, 10)
+      );
 
     const income =
       one(`
@@ -3252,7 +3800,8 @@ app.post(
           ) AS total
         FROM income
         WHERE date=?
-      `, date).total;
+      `,
+      date).total;
 
     const expenses =
       one(`
@@ -3263,8 +3812,10 @@ app.post(
           ) AS total
         FROM expenses
         WHERE date=?
-          AND motorcycle_id IS NOT NULL
-      `, date).total;
+          AND motorcycle_id
+            IS NOT NULL
+      `,
+      date).total;
 
     const net =
       Number(income) -
@@ -3330,7 +3881,10 @@ app.get(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D3', 'D4'])
+      !deptOnly(
+        req,
+        ['D3', 'D4']
+      )
     ) {
       return res.json([]);
     }
@@ -3340,10 +3894,12 @@ app.get(
         rows(`
           SELECT
             c.*,
-            u.name AS closed_by_name
+            u.name
+              AS closed_by_name
           FROM daily_closings c
           JOIN users u
-            ON u.id=c.closed_by
+            ON u.id=
+               c.closed_by
           ORDER BY
             c.date DESC,
             c.id DESC
@@ -3364,7 +3920,7 @@ app.get(
 );
 
 /* =========================================================
-   EVIDENCE
+   EVIDENCE UPLOAD
 ========================================================= */
 
 app.post(
@@ -3403,16 +3959,69 @@ app.post(
               )
             : null;
 
+        let task = null;
+        let report = null;
+
+        if (
+          taskId !== null
+        ) {
+          task =
+            one(
+              'SELECT * FROM tasks WHERE id=?',
+              taskId
+            );
+
+          if (!task) {
+            try {
+              fs.unlinkSync(
+                req.file.path
+              );
+            } catch (_) {}
+
+            return res.status(400).json({
+              error:
+                'Linked task not found.'
+            });
+          }
+        }
+
+        if (
+          reportId !== null
+        ) {
+          report =
+            one(
+              'SELECT * FROM reports WHERE id=?',
+              reportId
+            );
+
+          if (!report) {
+            try {
+              fs.unlinkSync(
+                req.file.path
+              );
+            } catch (_) {}
+
+            return res.status(400).json({
+              error:
+                'Linked report not found.'
+            });
+          }
+        }
+
         /*
-         * Validate linked task/report
-         * before storing evidence.
+         * Authorization for linked records.
          */
         if (
-          taskId !== null &&
-          !one(
-            'SELECT id FROM tasks WHERE id=?',
-            taskId
-          )
+          task &&
+          !d1(req) &&
+          Number(
+            task.responsible_user
+          ) !==
+            Number(req.user.id) &&
+          Number(
+            task.created_by
+          ) !==
+            Number(req.user.id)
         ) {
           try {
             fs.unlinkSync(
@@ -3420,18 +4029,19 @@ app.post(
             );
           } catch (_) {}
 
-          return res.status(400).json({
+          return res.status(403).json({
             error:
-              'Linked task not found.'
+              'You are not permitted to attach evidence to this task.'
           });
         }
 
         if (
-          reportId !== null &&
-          !one(
-            'SELECT id FROM reports WHERE id=?',
-            reportId
-          )
+          report &&
+          !d1(req) &&
+          Number(
+            report.user_id
+          ) !==
+            Number(req.user.id)
         ) {
           try {
             fs.unlinkSync(
@@ -3439,9 +4049,9 @@ app.post(
             );
           } catch (_) {}
 
-          return res.status(400).json({
+          return res.status(403).json({
             error:
-              'Linked report not found.'
+              'You are not permitted to attach evidence to this report.'
           });
         }
 
@@ -3476,8 +4086,10 @@ app.post(
             {
               original_name:
                 req.file.originalname,
-              task_id: taskId,
-              report_id: reportId
+              task_id:
+                taskId,
+              report_id:
+                reportId
             }
           );
 
@@ -3486,8 +4098,9 @@ app.post(
             id:
               result.lastInsertRowid,
             url:
-              '/uploads/' +
-              req.file.filename
+              '/api/evidence/' +
+              result.lastInsertRowid +
+              '/file'
           });
         } catch (dbError) {
           try {
@@ -3503,7 +4116,8 @@ app.post(
 
           res.status(400).json({
             error:
-              NODE_ENV === 'production'
+              NODE_ENV ===
+              'production'
                 ? 'Unable to save evidence.'
                 : dbError.message
           });
@@ -3512,6 +4126,10 @@ app.post(
     );
   }
 );
+
+/* =========================================================
+   EVIDENCE LIST
+========================================================= */
 
 app.get(
   '/api/evidence',
@@ -3524,37 +4142,66 @@ app.get(
             ? `
               SELECT
                 e.*,
-                u.name AS uploaded_name,
+                u.name
+                  AS uploaded_name,
                 u.department_id
                   AS uploaded_department
               FROM evidence e
               JOIN users u
-                ON u.id=e.uploaded_by
-              ORDER BY e.id DESC
+                ON u.id=
+                   e.uploaded_by
+              ORDER BY
+                e.id DESC
             `
             : `
               SELECT
                 e.*,
-                u.name AS uploaded_name,
+                u.name
+                  AS uploaded_name,
                 u.department_id
                   AS uploaded_department
               FROM evidence e
               JOIN users u
-                ON u.id=e.uploaded_by
+                ON u.id=
+                   e.uploaded_by
               WHERE
                 u.department_id=?
                 OR e.uploaded_by=?
-              ORDER BY e.id DESC
+                OR EXISTS (
+                  SELECT 1
+                  FROM tasks t
+                  WHERE
+                    t.id=e.task_id
+                    AND (
+                      t.responsible_user=?
+                      OR t.created_by=?
+                    )
+                )
+                OR EXISTS (
+                  SELECT 1
+                  FROM reports r
+                  WHERE
+                    r.id=e.report_id
+                    AND r.user_id=?
+                )
+              ORDER BY
+                e.id DESC
             `,
           ...(d1(req)
             ? []
             : [
-                req.user.department_id,
+                req.user
+                  .department_id,
+                req.user.id,
+                req.user.id,
+                req.user.id,
                 req.user.id
               ])
         );
 
-      res.json(data);
+      res.json(
+        data || []
+      );
     } catch (error) {
       console.error(
         'EVIDENCE LOAD ERROR:',
@@ -3566,6 +4213,129 @@ app.get(
           'Unable to load evidence.'
       });
     }
+  }
+);
+
+/* =========================================================
+   SECURE EVIDENCE FILE ACCESS
+========================================================= */
+
+app.get(
+  '/api/evidence/:id/file',
+  auth,
+  (req, res) => {
+    const id =
+      Number(
+        req.params.id
+      );
+
+    if (
+      !Number.isInteger(id)
+    ) {
+      return res.status(400).json({
+        error:
+          'Invalid evidence.'
+      });
+    }
+
+    const evidence =
+      one(
+        `
+        SELECT
+          e.*,
+          t.responsible_user,
+          t.created_by AS task_creator,
+          r.user_id AS report_user,
+          u.department_id
+            AS uploader_department
+        FROM evidence e
+        LEFT JOIN tasks t
+          ON t.id=e.task_id
+        LEFT JOIN reports r
+          ON r.id=e.report_id
+        JOIN users u
+          ON u.id=e.uploaded_by
+        WHERE e.id=?
+        `,
+        id
+      );
+
+    if (!evidence) {
+      return res.status(404).json({
+        error:
+          'Evidence not found.'
+      });
+    }
+
+    const permitted =
+      d1(req) ||
+      Number(
+        evidence.uploaded_by
+      ) ===
+        Number(req.user.id) ||
+      evidence.uploader_department ===
+        req.user.department_id ||
+      Number(
+        evidence.responsible_user
+      ) ===
+        Number(req.user.id) ||
+      Number(
+        evidence.task_creator
+      ) ===
+        Number(req.user.id) ||
+      Number(
+        evidence.report_user
+      ) ===
+        Number(req.user.id);
+
+    if (!permitted) {
+      return res.status(403).json({
+        error:
+          'You are not permitted to access this file.'
+      });
+    }
+
+    const safeFilename =
+      path.basename(
+        evidence.filename
+      );
+
+    const filePath =
+      path.join(
+        UPLOAD_DIR,
+        safeFilename
+      );
+
+    if (
+      !fs.existsSync(
+        filePath
+      )
+    ) {
+      return res.status(404).json({
+        error:
+          'Evidence file is missing.'
+      });
+    }
+
+    res.setHeader(
+      'Content-Type',
+      evidence.mime ||
+        'application/octet-stream'
+    );
+
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${String(
+        evidence.original_name
+      ).replace(
+        /["\r\n]/g,
+        ''
+      )}"`
+    );
+
+    return res.sendFile(
+      filePath
+    );
   }
 );
 
@@ -3589,40 +4359,49 @@ app.get(
             ? `
               SELECT
                 a.*,
-                u.name AS user_name,
+                u.name
+                  AS user_name,
                 u.department_id
                   AS user_department
               FROM audit a
               LEFT JOIN users u
-                ON u.id=a.who_user
-              ORDER BY a.id DESC
+                ON u.id=
+                   a.who_user
+              ORDER BY
+                a.id DESC
             `
             : `
               SELECT
                 a.*,
-                u.name AS user_name,
+                u.name
+                  AS user_name,
                 u.department_id
                   AS user_department
               FROM audit a
               LEFT JOIN users u
-                ON u.id=a.who_user
+                ON u.id=
+                   a.who_user
               WHERE
                 a.who_user=?
                 OR u.department_id=?
-              ORDER BY a.id DESC
+              ORDER BY
+                a.id DESC
             `,
           ...(d1(req)
             ? []
             : [
                 req.user.id,
-                req.user.department_id
+                req.user
+                  .department_id
               ])
         );
 
       res.json(
         data.filter(
           (item) =>
-            JSON.stringify(item)
+            JSON.stringify(
+              item
+            )
               .toLowerCase()
               .includes(q)
         )
@@ -3650,7 +4429,10 @@ app.post(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D3', 'D4'])
+      !deptOnly(
+        req,
+        ['D3', 'D4']
+      )
     ) {
       return res.status(403).json({
         error:
@@ -3704,10 +4486,12 @@ app.post(
           recordType,
           recordId,
           JSON.stringify(
-            req.body.original || {}
+            req.body.original ||
+              {}
           ),
           JSON.stringify(
-            req.body.proposed || {}
+            req.body.proposed ||
+              {}
           ),
           reason,
           req.user.id
@@ -3718,8 +4502,10 @@ app.post(
         'PROPOSE_CHANGE',
         recordType,
         recordId,
-        req.body.original || {},
-        req.body.proposed || {},
+        req.body.original ||
+          {},
+        req.body.proposed ||
+          {},
         reason
       );
 
@@ -3736,7 +4522,8 @@ app.post(
 
       res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to create finance change.'
             : error.message
       });
@@ -3836,7 +4623,8 @@ app.post(
 
       res.json({
         ok: true,
-        status: decision
+        status:
+          decision
       });
     } catch (error) {
       console.error(
@@ -3846,7 +4634,8 @@ app.post(
 
       res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to process finance decision.'
             : error.message
       });
@@ -4035,8 +4824,10 @@ app.patch(
           : 0;
 
     const name =
-      req.body.name ||
-      user.name;
+      String(
+        req.body.name ||
+          user.name
+      ).trim();
 
     if (
       !one(
@@ -4059,6 +4850,21 @@ app.patch(
       return res.status(400).json({
         error:
           'New password must contain at least 10 characters.'
+      });
+    }
+
+    /*
+     * Prevent D1 from accidentally
+     * disabling their own account.
+     */
+    if (
+      Number(user.id) ===
+        Number(req.user.id) &&
+      active === 0
+    ) {
+      return res.status(400).json({
+        error:
+          'D1 cannot deactivate the currently logged-in account.'
       });
     }
 
@@ -4123,7 +4929,8 @@ app.patch(
 
       res.status(400).json({
         error:
-          NODE_ENV === 'production'
+          NODE_ENV ===
+          'production'
             ? 'Unable to update account.'
             : error.message
       });
@@ -4140,10 +4947,14 @@ app.get(
   auth,
   (req, res) => {
     if (
-      !deptOnly(req, ['D3', 'D4'])
+      !deptOnly(
+        req,
+        ['D3', 'D4']
+      )
     ) {
       return res.json({
-        totalMotorcycles: 0,
+        totalMotorcycles:
+          0,
         active: 0,
         inactive: 0,
         maintenance: 0,
@@ -4256,10 +5067,15 @@ app.get(
         todayExpenses,
 
         todayNet:
-          Number(todayIncome) -
-          Number(todayExpenses),
+          Number(
+            todayIncome
+          ) -
+          Number(
+            todayExpenses
+          ),
 
-        totalIncome: income,
+        totalIncome:
+          income,
 
         totalExpenses:
           expense,
@@ -4298,16 +5114,17 @@ app.get(
 
       const output = [];
 
-      /*
-       * Fleet alerts only for D1/D3/D4.
-       */
       if (
-        deptOnly(req, ['D3', 'D4'])
+        deptOnly(
+          req,
+          ['D3', 'D4']
+        )
       ) {
         rows(`
           SELECT *
           FROM motorcycles
-          WHERE status='Under Maintenance'
+          WHERE status=
+            'Under Maintenance'
         `).forEach(
           (motorcycle) => {
             output.push({
@@ -4320,9 +5137,16 @@ app.get(
         );
 
         rows(`
-          SELECT *
-          FROM maintenance
-          WHERE next_service IS NOT NULL
+          SELECT
+            m.*,
+            x.code
+              AS motorcycle_code
+          FROM maintenance m
+          JOIN motorcycles x
+            ON x.id=
+               m.motorcycle_id
+          WHERE
+            m.next_service IS NOT NULL
         `).forEach(
           (maintenance) => {
             if (
@@ -4333,22 +5157,21 @@ app.get(
                 level:
                   'warning',
                 text:
-                  `${maintenance.motorcycle_id} maintenance service due/overdue`
+                  `${maintenance.motorcycle_code} maintenance service due/overdue`
               });
             }
           }
         );
       }
 
-      /*
-       * Tasks are always department-filtered.
-       */
       const overdueTasks =
         d1(req)
           ? rows(`
               SELECT *
               FROM tasks
-              WHERE status <> 'Completed'
+              WHERE
+                status NOT IN
+                  ('Completed', 'Cancelled')
                 AND deadline IS NOT NULL
                 AND deadline < ?
             `,
@@ -4358,18 +5181,23 @@ app.get(
                 t.*
               FROM tasks t
               JOIN users u
-                ON u.id=t.responsible_user
+                ON u.id=
+                   t.responsible_user
               WHERE
-                t.status <> 'Completed'
+                t.status NOT IN
+                  ('Completed', 'Cancelled')
                 AND t.deadline IS NOT NULL
                 AND t.deadline < ?
                 AND (
                   u.department_id=?
                   OR t.created_by=?
+                  OR t.responsible_user=?
                 )
             `,
             today,
-            req.user.department_id,
+            req.user
+              .department_id,
+            req.user.id,
             req.user.id);
 
       overdueTasks.forEach(
@@ -4383,32 +5211,23 @@ app.get(
         }
       );
 
-      res.json(output);
+      res.json(
+        output
+      );
     } catch (error) {
       console.error(
         'ALERTS ERROR:',
         error
       );
 
-      /*
-       * Alerts must never break dashboard loading.
-       */
       res.json([]);
     }
   }
 );
 
 /* =========================================================
-   STATIC FILES
+   STATIC FRONTEND
 ========================================================= */
-
-app.use(
-  '/uploads',
-  auth,
-  express.static(
-    UPLOAD_DIR
-  )
-);
 
 app.use(
   express.static(
@@ -4417,10 +5236,18 @@ app.use(
       'public'
     ),
     {
-      index: 'index.html'
+      index:
+        'index.html'
     }
   )
 );
+
+/*
+ * IMPORTANT:
+ * Do NOT expose /public/uploads directly.
+ * Evidence files are accessed only through
+ * the authenticated API endpoint above.
+ */
 
 /* =========================================================
    API 404
@@ -4470,7 +5297,12 @@ app.use(
 ========================================================= */
 
 app.use(
-  (error, req, res, next) => {
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
     console.error(
       'GLOBAL ERROR:',
       error
@@ -4484,7 +5316,8 @@ app.use(
 
     res.status(500).json({
       error:
-        NODE_ENV === 'production'
+        NODE_ENV ===
+        'production'
           ? 'Internal server error'
           : error.message
     });
