@@ -77,6 +77,29 @@ CREATE TABLE IF NOT EXISTS departments(
   person TEXT NOT NULL,
   responsibility TEXT NOT NULL
 );
+try {
+  const taskColumns = db.prepare(`
+    PRAGMA table_info(tasks)
+  `).all();
+
+  const hasRejectionReason =
+    taskColumns.some(
+      column =>
+        column.name === 'rejection_reason'
+    );
+
+  if (!hasRejectionReason) {
+    db.exec(`
+      ALTER TABLE tasks
+      ADD COLUMN rejection_reason TEXT
+    `);
+  }
+} catch (error) {
+  console.error(
+    'TASK MIGRATION ERROR:',
+    error
+  );
+}
 
 CREATE TABLE IF NOT EXISTS users(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
