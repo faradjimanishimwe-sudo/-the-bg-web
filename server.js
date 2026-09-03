@@ -77,10 +77,18 @@ CREATE TABLE IF NOT EXISTS departments(
   person TEXT NOT NULL,
   responsibility TEXT NOT NULL
 );
+`);
+
+/* =========================================================
+   TASK MIGRATION
+========================================================= */
+
 try {
-  const taskColumns = db.prepare(`
-    PRAGMA table_info(tasks)
-  `).all();
+  const taskColumns = db
+    .prepare(`
+      PRAGMA table_info(tasks)
+    `)
+    .all();
 
   const hasRejectionReason =
     taskColumns.some(
@@ -97,6 +105,9 @@ try {
 } catch (error) {
   console.error(
     'TASK MIGRATION ERROR:',
+    error
+  );
+}
     error
   );
 }
