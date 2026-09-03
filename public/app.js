@@ -1388,7 +1388,7 @@ function dashboard() {
                     <span>Everything is currently under control.</span>
                   </div>
                 `
-            }
+}
 
           </div>
 
