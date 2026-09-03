@@ -1103,572 +1103,137 @@ const card = (label, value) => `
 ========================================================= */
 
 function dashboard() {
-  const d = state.data;
-
-  const income = d.income.reduce((sum, x) => sum + Number(x.amount || 0), 0);
-  const expenses = d.expenses.reduce((sum, x) => sum + Number(x.amount || 0), 0);
-  const net = income - expenses;
-
-  const completed = d.tasks.filter(x => x.status === 'Completed').length;
-
-  const overdue = d.tasks.filter(t => {
-    const deadline = getTaskDeadline(t);
-    return deadline && deadline < today() && t.status !== 'Completed';
-  }).length;
-
-  const taskRate = d.tasks.length
-    ? Math.round((completed / d.tasks.length) * 100)
-    : 0;
-
-  let myPerformance = 0;
-  try {
-    myPerformance = calculatePerformance(state.me) || 0;
-  } catch (e) {
-    myPerformance = 0;
-  }
-
-  const priorityTasks = [...d.tasks]
-    .filter(t => t.status !== 'Completed')
-    .sort((a, b) => {
-      const priority = { High: 3, Medium: 2, Low: 1 };
-      const pa = priority[a.priority] || 0;
-      const pb = priority[b.priority] || 0;
-
-      if (pa !== pb) return pb - pa;
-
-      const da = getTaskDeadline(a) || '9999-12-31';
-      const db = getTaskDeadline(b) || '9999-12-31';
-
-      return da.localeCompare(db);
-    })
-    .slice(0, 5);
-
-  const recentActivities = [...d.activities]
-    .sort((a, b) => {
-      const da = a.activity_date || a.created_at || '';
-      const db = b.activity_date || b.created_at || '';
-      return String(db).localeCompare(String(da));
-    })
-    .slice(0, 5);
-
-  const fleetCount = d.motorcycles.length;
-
-  const fleetIncome = d.income
-    .filter(x => x.source === 'fleet' || x.type === 'fleet')
-    .reduce((sum, x) => sum + Number(x.amount || 0), 0);
-
-  const activeGoals = d.goals
-    .filter(g => {
-      const status = String(g.status || '').toLowerCase();
-      return status !== 'completed' && status !== 'closed';
-    })
-    .slice(0, 4);
-
-  const departmentRows = d.departments.map(dept => {
-    const code = String(dept.code || '').toUpperCase();
-
-    const tasks = d.tasks.filter(t => {
-      const taskCode = String(t.department_code || '').toUpperCase();
-
-      if (taskCode === code) return true;
-
-      const user = findUser(getTaskResponsibleId(t));
-
-      return user && getDepartmentCodeFromUser(user) === code;
-    });
-
-    const done = tasks.filter(t => t.status === 'Completed').length;
-
-    const score = tasks.length
-      ? Math.round((done / tasks.length) * 100)
-      : 0;
-
-    return {
-      code,
-      officer: getDepartmentOfficer(dept),
-      tasks: tasks.length,
-      done,
-      score
-    };
-  });
-
-  const userName = state.me
-    ? userName(state.me)
-    : 'User';
-
-  const userDepartment = state.me?.department_code
-    ? String(state.me.department_code).toUpperCase()
-    : '';
-
-  const userRole = state.me?.role || '';
-
-  shell('THE BG WEB', `
-    <div class="dash-wrap">
-
-      <!-- HEADER -->
-      <section class="dash-hero">
-        <div>
-          <div class="dash-eyebrow">THE BG WEB · COMMAND CENTER</div>
-          <h1>Good day, ${esc(userName)}</h1>
-          <p>
-            ${esc(userDepartment)}
-            ${userRole ? ` · ${esc(userRole)}` : ''}
-          </p>
-        </div>
-
-        <div class="dash-hero-badge">
-          <span class="dash-live-dot"></span>
-          SYSTEM ACTIVE
-        </div>
-      </section>
-
-
-      <!-- KPI AREA -->
-      <section class="dash-kpis">
-
-        <div class="dash-kpi revenue">
-          <div class="dash-kpi-top">
-            <span>REVENUE</span>
-            <span class="dash-icon">↗</span>
-          </div>
-          <strong>${money(income)}</strong>
-          <small>Total recorded income</small>
-        </div>
-
-        <div class="dash-kpi expenses">
-          <div class="dash-kpi-top">
-            <span>EXPENSES</span>
-            <span class="dash-icon">↘</span>
-          </div>
-          <strong>${money(expenses)}</strong>
-          <small>Total recorded expenses</small>
-        </div>
-
-        <div class="dash-kpi net">
-          <div class="dash-kpi-top">
-            <span>NET RESULT</span>
-            <span class="dash-icon">◆</span>
-          </div>
-          <strong>${money(net)}</strong>
-          <small>${net >= 0 ? 'Positive business result' : 'Attention required'}</small>
-        </div>
-
-        <div class="dash-kpi tasks">
-          <div class="dash-kpi-top">
-            <span>TASK PERFORMANCE</span>
-            <span class="dash-icon">✓</span>
-          </div>
-
-          <strong>${taskRate}%</strong>
-
-          <div class="dash-progress">
-            <span style="width:${Math.min(taskRate, 100)}%"></span>
-          </div>
-
-          <small>${completed} completed · ${overdue} overdue</small>
-        </div>
-
-      </section>
-
-
-      <!-- MAIN AREA -->
-      <section class="dash-main-grid">
-
-        <!-- BUSINESS PERFORMANCE -->
-        <div class="dash-panel dash-overview">
-
-          <div class="dash-panel-head">
-            <div>
-              <span class="dash-label">BUSINESS OVERVIEW</span>
-              <h2>Performance Overview</h2>
-            </div>
-
-            <div class="dash-score">
-              <strong>${myPerformance}%</strong>
-              <span>My Score</span>
-            </div>
-          </div>
-
-          <div class="dash-overview-body">
-
-            <div class="dash-big-number">
-              <span>NET BUSINESS RESULT</span>
-              <strong>${money(net)}</strong>
-              <p>
-                Revenue ${money(income)}
-                <span>−</span>
-                Expenses ${money(expenses)}
-              </p>
-            </div>
-
-            <div class="dash-mini-grid">
-
-              <div class="dash-mini">
-                <span>ALL TASKS</span>
-                <strong>${d.tasks.length}</strong>
-              </div>
-
-              <div class="dash-mini">
-                <span>COMPLETED</span>
-                <strong>${completed}</strong>
-              </div>
-
-              <div class="dash-mini">
-                <span>OVERDUE</span>
-                <strong>${overdue}</strong>
-              </div>
-
-              <div class="dash-mini">
-                <span>ACTIVE USERS</span>
-                <strong>${d.users.filter(x => x.active).length}</strong>
-              </div>
-
-            </div>
-
-          </div>
-
-        </div>
-
-
-        <!-- PRIORITY TASKS -->
-        <div class="dash-panel dash-priority">
-
-          <div class="dash-panel-head">
-            <div>
-              <span class="dash-label">WORK CONTROL</span>
-              <h2>Priority Tasks</h2>
-            </div>
-
-            <span class="dash-count">${priorityTasks.length}</span>
-          </div>
-
-          <div class="dash-task-list">
-
-            ${
-              priorityTasks.length
-                ? priorityTasks.map(task => {
-                    const title = getTaskTitle(task);
-                    const responsible = findUser(getTaskResponsibleId(task));
-                    const responsibleName = responsible
-                      ? userName(responsible)
-                      : 'Unassigned';
-
-                    const deadline = getTaskDeadline(task);
-                    const isOverdue =
-                      deadline &&
-                      deadline < today() &&
-                      task.status !== 'Completed';
-
-                    const p = String(task.priority || 'Normal');
-
-                    return `
-                      <div class="dash-task-item">
-
-                        <div class="dash-task-mark ${p.toLowerCase()}"></div>
-
-                        <div class="dash-task-content">
-                          <strong>${esc(title)}</strong>
-
-                          <span>
-                            ${esc(responsibleName)}
-                            ${deadline ? ` · ${esc(deadline)}` : ''}
-                          </span>
-                        </div>
-
-                        <div class="dash-task-status ${isOverdue ? 'danger' : ''}">
-                          ${isOverdue ? 'OVERDUE' : esc(p.toUpperCase())}
-                        </div>
-
-                      </div>
-                    `;
-                  }).join('')
-                : `
-                  <div class="dash-empty">
-                    <strong>No pending priority tasks</strong>
-                    <span>Everything is currently under control.</span>
-                  </div>
-                `
-}
-
-          </div>
-
-        </div>
-
-      </section>
-
-
-      <!-- SECOND AREA -->
-      <section class="dash-secondary-grid">
-
-        <!-- FLEET -->
-        <div class="dash-panel dash-fleet">
-
-          <div class="dash-panel-head">
-            <div>
-              <span class="dash-label">FLEET MANAGEMENT</span>
-              <h2>Motorcycle Fleet</h2>
-            </div>
-
-            <span class="dash-panel-number">${fleetCount}</span>
-          </div>
-
-          <div class="dash-fleet-main">
-
-            <div class="dash-fleet-ring">
-              <strong>${fleetCount}</strong>
-              <span>BIKES</span>
-            </div>
-
-            <div class="dash-fleet-info">
-
-              <div>
-                <span>Registered Motorcycles</span>
-                <strong>${fleetCount}</strong>
-              </div>
-
-              <div>
-                <span>Fleet Income</span>
-                <strong>${money(fleetIncome)}</strong>
-              </div>
-
-            </div>
-
-          </div>
-
-        </div>
-
-
-        <!-- RECENT ACTIVITY -->
-        <div class="dash-panel dash-activity">
-
-          <div class="dash-panel-head">
-            <div>
-              <span class="dash-label">LIVE WORKSPACE</span>
-              <h2>Recent Activity</h2>
-            </div>
-          </div>
-
-          <div class="dash-activity-list">
-
-            ${
-              recentActivities.length
-                ? recentActivities.map(activity => `
-                    <div class="dash-activity-item">
-
-                      <div class="dash-activity-dot"></div>
-
-                      <div>
-                        <strong>
-                          ${esc(
-                            activity.user_name ||
-                            activity.user ||
-                            getUserNameById(activity.user_id) ||
-                            'User'
-                          )}
-                        </strong>
-
-                        <p>
-                          ${esc(
-                            activity.description ||
-                            activity.details ||
-                            activity.activity ||
-                            'Work activity recorded'
-                          )}
-                        </p>
-
-                        <small>
-                          ${esc(
-                            activity.activity_date ||
-                            activity.created_at ||
-                            ''
-                          )}
-                        </small>
-                      </div>
-
-                    </div>
-                  `).join('')
-                : `
-                    <div class="dash-empty">
-                      <strong>No recent activity</strong>
-                      <span>New work activity will appear here.</span>
-                    </div>
-                  `
-            }
-
-          </div>
-
-        </div>
-
-      </section>
-
-
-      <!-- LOWER AREA -->
-      <section class="dash-lower-grid">
-
-        <!-- DEPARTMENTS -->
-        <div class="dash-panel dash-departments">
-
-          <div class="dash-panel-head">
-            <div>
-              <span class="dash-label">ORGANIZATION</span>
-              <h2>Department Performance</h2>
-            </div>
-          </div>
-
-          <div class="dash-department-list">
-
-            ${
-              departmentRows.length
-                ? departmentRows.map(row => `
-                    <div class="dash-department">
-
-                      <div class="dash-dept-code">
-                        ${esc(row.code)}
-                      </div>
-
-                      <div class="dash-dept-info">
-                        <strong>${esc(row.officer)}</strong>
-
-                        <span>
-                          ${row.done}/${row.tasks} tasks completed
-                        </span>
-
-                        <div class="dash-progress">
-                          <span style="width:${Math.min(row.score, 100)}%"></span>
-                        </div>
-                      </div>
-
-                      <strong class="dash-dept-score">
-                        ${row.score}%
-                      </strong>
-
-                    </div>
-                  `).join('')
-                : `
-                    <div class="dash-empty">
-                      <strong>No department data</strong>
-                    </div>
-                  `
-            }
-
-          </div>
-
-        </div>
-
-
-        <!-- GOALS -->
-        <div class="dash-panel dash-goals">
-
-          <div class="dash-panel-head">
-            <div>
-              <span class="dash-label">STRATEGY</span>
-              <h2>Active Goals</h2>
-            </div>
-
-            <span class="dash-count">${activeGoals.length}</span>
-          </div>
-
-          <div class="dash-goal-list">
-
-            ${
-              activeGoals.length
-                ? activeGoals.map(goal => {
-
-                    const progress = Math.max(
-                      0,
-                      Math.min(
-                        100,
-                        Number(
-                          goal.progress ||
-                          goal.percentage ||
-                          goal.completion ||
-                          0
-                        )
-                      )
+  const d =
+    state.data;
+
+  const income =
+    d.income.reduce(
+      (sum, x) =>
+        sum +
+        Number(x.amount || 0),
+      0
+    );
+
+  const expenses =
+    d.expenses.reduce(
+      (sum, x) =>
+        sum +
+        Number(x.amount || 0),
+      0
+    );
+
+  const completed =
+    d.tasks.filter(
+      x =>
+        x.status ===
+        'Completed'
+    ).length;
+
+  const overdue =
+    d.tasks.filter(t => {
+      const deadline =
+        getTaskDeadline(t);
+
+      return (
+        deadline &&
+        deadline < today() &&
+        t.status !==
+          'Completed'
+      );
+    }).length;
+
+  shell(
+    'THE BG TODAY',
+    `
+      <div class="grid">
+
+        ${card(
+          'Active Users',
+          d.users.filter(
+            x => x.active
+          ).length
+        )}
+
+        ${card(
+          'Tasks',
+          d.tasks.length
+        )}
+
+        ${card(
+          'Completed',
+          completed
+        )}
+
+        ${card(
+          'Overdue',
+          overdue
+        )}
+
+        ${card(
+          'Income',
+          money(income)
+        )}
+
+        ${card(
+          'Expenses',
+          money(expenses)
+        )}
+
+        ${card(
+          'Net Result',
+          money(
+            income - expenses
+          )
+        )}
+
+        ${card(
+          'Motorcycles',
+          d.motorcycles.length
+        )}
+
+      </div>
+
+      <div class="section grid2">
+
+        <div class="card">
+
+          <h2>
+            Department Performance
+          </h2>
+
+          ${d.departments.map(
+            dept => {
+
+              const code =
+                String(
+                  dept.code || ''
+                ).toUpperCase();
+
+              const departmentTasks =
+                d.tasks.filter(
+                  t =>
+                    String(
+                      t.department_code ||
+                      ''
+                    ).toUpperCase() ===
+                    code
+                );
+
+              const responsibleTasks =
+                d.tasks.filter(
+                  t => {
+                    const user =
+                      findUser(
+                        getTaskResponsibleId(t)
+                      );
+
+                    return (
+                      user &&
+                      getDepartmentCodeFromUser(
+                        user
+                      ) === code
                     );
-
-                    return `
-                      <div class="dash-goal">
-
-                        <div class="dash-goal-head">
-                          <strong>
-                            ${esc(
-                              goal.title ||
-                              goal.name ||
-                              'Untitled Goal'
-                            )}
-                          </strong>
-
-                          <span>${progress}%</span>
-                        </div>
-
-                        <div class="dash-progress">
-                          <span style="width:${progress}%"></span>
-                        </div>
-
-                      </div>
-                    `;
-                  }).join('')
-                : `
-                    <div class="dash-empty">
-                      <strong>No active goals</strong>
-                      <span>Strategic goals will appear here.</span>
-                    </div>
-                  `
-            }
-
-          </div>
-
-        </div>
-
-
-        <!-- ALERTS -->
-        <div class="dash-panel dash-alerts">
-
-          <div class="dash-panel-head">
-            <div>
-              <span class="dash-label">SYSTEM MONITOR</span>
-              <h2>Alerts</h2>
-            </div>
-
-            <span class="dash-count">
-              ${state.alerts.length}
-            </span>
-          </div>
-
-          <div class="dash-alert-list">
-
-            ${
-              state.alerts.length
-                ? state.alerts.slice(0, 5).map(alert => `
-                    <div class="dash-alert-item ${esc(alert.severity || 'info')}">
-
-                      <div class="dash-alert-symbol">!</div>
-
-                      <div>
-                        <strong>${esc(alert.title || '')}</strong>
-                        <span>${esc(alert.message || '')}</span>
-                      </div>
-
-                    </div>
-                  `).join('')
-                : `
-                    <div class="dash-empty">
-                      <strong>All clear</strong>
-                      <span>No active system alerts.</span>
-                    </div>
-                  `
-            }
-
-          </div>
-
-        </div>
-
-      </section>
-
-    </div>
-  `);
-}
+                  }
                 );
 
               const tasks =
