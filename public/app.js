@@ -1,7 +1,14 @@
+/* =========================================================
+   THE BG WEB — FRONTEND
+   FULL REPLACEMENT APP.JS
+   Compatible with the current THE BG WEB server.js
+========================================================= */
+
 const app = document.getElementById('app');
 
 const state = {
   me: null,
+
   data: {
     departments: [],
     users: [],
@@ -20,176 +27,673 @@ const state = {
     audit: [],
     changes: []
   },
+
   page: 'dashboard',
-  activities: [],
-  goals: [],
-  assignments: [],
-  odometer: [],
-  maintenance: [],
-  closings: [],
+
   alerts: [],
-  evidence: [],
   fleet: null
 };
 
+/* =========================================================
+   HELPERS
+========================================================= */
+
 const $ = id => document.getElementById(id);
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () =>
+  new Date().toISOString().slice(0, 10);
 
-const money = n =>
-  Number(n || 0).toLocaleString() + ' RWF';
+const money = value =>
+  Number(value || 0).toLocaleString('en-US') + ' RWF';
 
-const esc = s =>
-  String(s ?? '').replace(/[&<>'"]/g, c => ({
+const esc = value =>
+  String(value ?? '').replace(/[&<>'"]/g, char => ({
     '&': '&amp;',
     '<': '&lt;',
     '>': '&gt;',
     "'": '&#39;',
     '"': '&quot;'
-  }[c]));
+  }[char]));
 
-async function api(url, opt = {}) {
-  const headers =
-    opt.body instanceof FormData
-      ? { ...(opt.headers || {}) }
+function safeDate(value) {
+  if (!value) return '';
+  return String(value).slice(0, 10);
+}
+
+function userName(user) {
+  return (
+    user?.full_name ||
+    user?.name ||
+    user?.username ||
+    '-'
+  );
+}
+
+function departmentCode(value) {
+  if (!value) return '';
+
+  if (typeof value === 'string') {
+    if (/^D[1-5]$/i.test(value)) {
+      return value.toUpperCase();
+    }
+  }
+
+  return '';
+}
+
+function findUser(id) {
+  return state.data.users.find(
+    u => Number(u.id) === Number(id)
+  );
+}
+
+function getUserNameById(id) {
+  const u = findUser(id);
+  return u ? userName(u) : '-';
+}
+
+function getDepartment(codeOrId) {
+  if (
+    typeof codeOrId === 'string' &&
+    /^D[1-5]$/i.test(codeOrId)
+  ) {
+    return state.data.departments.find(
+      d =>
+        String(d.code || '').toUpperCase() ===
+        String(codeOrId).toUpperCase()
+    );
+  }
+
+  return state.data.departments.find(
+    d => Number(d.id) === Number(codeOrId)
+  );
+}
+
+function getDepartmentCodeFromUser(u) {
+  if (!u) return '';
+
+  if (u.department_code) {
+    return String(u.department_code).toUpperCase();
+  }
+
+  if (u.department_id) {
+    const d = getDepartment(u.department_id);
+    return d?.code || '';
+  }
+
+  return '';
+}
+
+function getDepartmentName(codeOrId) {
+  const d = getDepartment(codeOrId);
+  return d?.name || d?.position || '-';
+}
+
+function getDepartmentOfficer(d) {
+  return (
+    d?.officer ||
+    d?.person ||
+    '-'
+  );
+}
+
+function getTaskTitle(t) {
+  return (
+    t?.title ||
+    t?.name ||
+    '-'
+  );
+}
+
+function getTaskResponsibleId(t) {
+  return (
+    t?.responsible_id ??
+    t?.responsible_user ??
+    null
+  );
+}
+
+function getTaskDeadline(t) {
+  return (
+    t?.due_date ||
+    t?.deadline ||
+    ''
+  );
+}
+
+function getTaskCreatedBy(t) {
+  return (
+    t?.created_by ??
+    t?.created_by_id ??
+    null
+  );
+}
+
+function getReportTitle(r) {
+  return (
+    r?.title ||
+    r?.type ||
+    'Report'
+  );
+}
+
+function getReportContent(r) {
+  return (
+    r?.content ||
+    r?.body ||
+    ''
+  );
+}
+
+function getReportDate(r) {
+  return (
+    r?.report_date ||
+    r?.date ||
+    ''
+  );
+}
+
+function getActivityDate(a) {
+  return (
+    a?.activity_date ||
+    a?.date ||
+    ''
+  );
+}
+
+function getActivityText(a) {
+  return (
+    a?.description ||
+    a?.done ||
+    a?.title ||
+    ''
+  );
+}
+
+function getGoalTarget(g) {
+  return Number(
+    g?.target ??
+    g?.target_value ??
+    0
+  );
+}
+
+function getGoalProgress(g) {
+  return Number(
+    g?.progress ??
+    g?.achieved ??
+    0
+  );
+}
+
+function getMotoPlate(m) {
+  return (
+    m?.plate_number ||
+    m?.plate ||
+    '-'
+  );
+}
+
+function getMotoModel(m) {
+  return m?.model || '-';
+}
+
+function getMotoStatus(m) {
+  return m?.status || '-';
+}
+
+function getMotoCode(m) {
+  return (
+    m?.code ||
+    m?.motorcycle_code ||
+    m?.plate_number ||
+    `MOTO-${m?.id || ''}`
+  );
+}
+
+/* =========================================================
+   API
+========================================================= */
+
+async function api(url, options = {}) {
+  const isForm =
+    options.body instanceof FormData;
+
+  const headers = {
+    ...(isForm
+      ? {}
       : {
-          'Content-Type': 'application/json',
-          ...(opt.headers || {})
-        };
+          'Content-Type': 'application/json'
+        }),
+    ...(options.headers || {})
+  };
 
-  const r = await fetch(url, {
+  const response = await fetch(url, {
     credentials: 'include',
-    ...opt,
+    ...options,
     headers
   });
 
-  const j = await r.json().catch(() => ({}));
+  const data =
+    await response
+      .json()
+      .catch(() => ({}));
 
-  if (!r.ok) {
-    throw Error(j.error || 'Request failed');
+  if (!response.ok) {
+    throw new Error(
+      data.error ||
+      data.message ||
+      `Request failed (${response.status})`
+    );
   }
 
-  return j;
+  return data;
 }
 
-/* =========================
-   DATA LOADING
-========================= */
+/* =========================================================
+   NORMALIZE DATA
+========================================================= */
+
+function normalizeUser(u) {
+  if (!u) return null;
+
+  const code =
+    u.department_code ||
+    departmentCode(u.department_id);
+
+  return {
+    ...u,
+    name:
+      u.full_name ||
+      u.name ||
+      u.username ||
+      '-',
+
+    full_name:
+      u.full_name ||
+      u.name ||
+      u.username ||
+      '-',
+
+    department_code:
+      code || '',
+
+    department_name:
+      u.department_name ||
+      getDepartmentName(code || u.department_id)
+  };
+}
+
+function normalizeDepartment(d) {
+  return {
+    ...d,
+
+    code:
+      d.code ||
+      d.id ||
+      '',
+
+    name:
+      d.name ||
+      d.position ||
+      '',
+
+    officer:
+      d.officer ||
+      d.person ||
+      '',
+
+    description:
+      d.description ||
+      d.responsibility ||
+      ''
+  };
+}
+
+function normalizeTask(t) {
+  const responsibleId =
+    t.responsible_id ??
+    t.responsible_user ??
+    null;
+
+  const responsible =
+    t.responsible_name ||
+    t.responsible_full_name ||
+    getUserNameById(responsibleId);
+
+  return {
+    ...t,
+
+    title:
+      t.title ||
+      t.name ||
+      '-',
+
+    responsible_id:
+      responsibleId,
+
+    responsible_name:
+      responsible,
+
+    due_date:
+      t.due_date ||
+      t.deadline ||
+      '',
+
+    department_code:
+      t.department_code ||
+      '',
+
+    description:
+      t.description ||
+      '',
+
+    status:
+      t.status ||
+      'Not Started',
+
+    priority:
+      t.priority ||
+      'Normal'
+  };
+}
+
+function normalizeReport(r) {
+  return {
+    ...r,
+
+    title:
+      r.title ||
+      r.type ||
+      'Report',
+
+    content:
+      r.content ||
+      r.body ||
+      '',
+
+    report_date:
+      r.report_date ||
+      r.date ||
+      '',
+
+    user_name:
+      r.user_name ||
+      r.full_name ||
+      getUserNameById(r.user_id),
+
+    status:
+      r.status ||
+      'Submitted'
+  };
+}
+
+function normalizeActivity(a) {
+  return {
+    ...a,
+
+    activity_date:
+      a.activity_date ||
+      a.date ||
+      '',
+
+    description:
+      a.description ||
+      a.done ||
+      a.title ||
+      '',
+
+    user_name:
+      a.user_name ||
+      a.full_name ||
+      getUserNameById(a.user_id)
+  };
+}
+
+function normalizeGoal(g) {
+  return {
+    ...g,
+
+    title:
+      g.title ||
+      'Goal',
+
+    description:
+      g.description ||
+      '',
+
+    target:
+      getGoalTarget(g),
+
+    achieved:
+      getGoalProgress(g),
+
+    target_date:
+      g.target_date ||
+      g.period ||
+      '',
+
+    status:
+      g.status ||
+      'Active'
+  };
+}
+
+function normalizeMoto(m) {
+  return {
+    ...m,
+
+    code:
+      getMotoCode(m),
+
+    plate:
+      getMotoPlate(m),
+
+    model:
+      getMotoModel(m),
+
+    status:
+      getMotoStatus(m)
+  };
+}
+
+function normalizeIncome(x) {
+  return {
+    ...x,
+
+    date:
+      x.income_date ||
+      x.date ||
+      '',
+
+    motorcycle_code:
+      x.motorcycle_code ||
+      x.code ||
+      '-',
+
+    entered_by_name:
+      x.entered_by_name ||
+      x.entered_name ||
+      getUserNameById(x.entered_by),
+
+    verified:
+      Boolean(
+        x.verified_at ||
+        x.verified_by ||
+        x.status === 'Verified'
+      )
+  };
+}
+
+function normalizeExpense(x) {
+  return {
+    ...x,
+
+    date:
+      x.expense_date ||
+      x.date ||
+      '',
+
+    expense_type:
+      x.category ||
+      x.expense_type ||
+      'Other',
+
+    motorcycle_code:
+      x.motorcycle_code ||
+      x.code ||
+      '-',
+
+    entered_by_name:
+      x.entered_by_name ||
+      x.entered_name ||
+      getUserNameById(x.entered_by)
+  };
+}
+
+/* =========================================================
+   LOAD
+========================================================= */
 
 async function load() {
-  const bootstrap = await api('/api/bootstrap');
+  const bootstrap =
+    await api('/api/bootstrap');
 
-  state.data = {
-    departments: Array.isArray(bootstrap.departments)
-      ? bootstrap.departments
-      : [],
+  const departments =
+    Array.isArray(bootstrap.departments)
+      ? bootstrap.departments.map(normalizeDepartment)
+      : [];
 
-    users: Array.isArray(bootstrap.users)
-      ? bootstrap.users
-      : [],
+  state.data.departments =
+    departments;
 
-    tasks: Array.isArray(bootstrap.tasks)
-      ? bootstrap.tasks
-      : [],
+  const users =
+    Array.isArray(bootstrap.users)
+      ? bootstrap.users.map(normalizeUser)
+      : [];
 
-    reports: Array.isArray(bootstrap.reports)
-      ? bootstrap.reports
-      : [],
+  state.data.users =
+    users;
 
-    activities: Array.isArray(bootstrap.activities)
-      ? bootstrap.activities
-      : [],
+  state.data.tasks =
+    Array.isArray(bootstrap.tasks)
+      ? bootstrap.tasks.map(normalizeTask)
+      : [];
 
-    goals: Array.isArray(bootstrap.goals)
-      ? bootstrap.goals
-      : [],
+  state.data.reports =
+    Array.isArray(bootstrap.reports)
+      ? bootstrap.reports.map(normalizeReport)
+      : [];
 
-    motorcycles: Array.isArray(bootstrap.motorcycles)
-      ? bootstrap.motorcycles
-      : [],
+  state.data.activities =
+    Array.isArray(bootstrap.activities)
+      ? bootstrap.activities.map(normalizeActivity)
+      : [];
 
-    income: Array.isArray(bootstrap.income)
-      ? bootstrap.income
-      : [],
+  state.data.goals =
+    Array.isArray(bootstrap.goals)
+      ? bootstrap.goals.map(normalizeGoal)
+      : [];
 
-    expenses: Array.isArray(bootstrap.expenses)
-      ? bootstrap.expenses
-      : [],
+  state.data.motorcycles =
+    Array.isArray(bootstrap.motorcycles)
+      ? bootstrap.motorcycles.map(normalizeMoto)
+      : [];
 
-    maintenance: Array.isArray(bootstrap.maintenance)
+  state.data.income =
+    Array.isArray(bootstrap.income)
+      ? bootstrap.income.map(normalizeIncome)
+      : [];
+
+  state.data.expenses =
+    Array.isArray(bootstrap.expenses)
+      ? bootstrap.expenses.map(normalizeExpense)
+      : [];
+
+  state.data.maintenance =
+    Array.isArray(bootstrap.maintenance)
       ? bootstrap.maintenance
-      : [],
+      : [];
 
-    assignments: Array.isArray(bootstrap.assignments)
+  state.data.assignments =
+    Array.isArray(bootstrap.assignments)
       ? bootstrap.assignments
-      : [],
+      : [];
 
-    odometer: Array.isArray(bootstrap.odometer)
+  state.data.odometer =
+    Array.isArray(bootstrap.odometer)
       ? bootstrap.odometer
-      : [],
+      : [];
 
-    dailyClosings: Array.isArray(bootstrap.dailyClosings)
+  state.data.dailyClosings =
+    Array.isArray(bootstrap.dailyClosings)
       ? bootstrap.dailyClosings
-      : [],
+      : [];
 
-    evidence: Array.isArray(bootstrap.evidence)
+  state.data.evidence =
+    Array.isArray(bootstrap.evidence)
       ? bootstrap.evidence
-      : [],
+      : [];
 
-    audit: Array.isArray(bootstrap.audit)
+  state.data.audit =
+    Array.isArray(bootstrap.audit)
       ? bootstrap.audit
-      : [],
+      : [];
 
-    changes: Array.isArray(bootstrap.changes)
-      ? bootstrap.changes
-      : []
-  };
-
-  state.activities = state.data.activities;
-  state.goals = state.data.goals;
-  state.assignments = state.data.assignments;
-  state.odometer = state.data.odometer;
-  state.maintenance = state.data.maintenance;
-  state.closings = state.data.dailyClosings;
-  state.evidence = state.data.evidence;
+  state.data.changes =
+    Array.isArray(
+      bootstrap.financeChanges
+    )
+      ? bootstrap.financeChanges
+      : Array.isArray(bootstrap.changes)
+        ? bootstrap.changes
+        : [];
 
   try {
-    const r = await api('/api/alerts');
+    const result =
+      await api('/api/alerts');
 
-    state.alerts = Array.isArray(r.alerts)
-      ? r.alerts
-      : [];
+    state.alerts =
+      Array.isArray(result.alerts)
+        ? result.alerts
+        : [];
   } catch {
     state.alerts = [];
   }
 
   try {
-    const r = await api('/api/fleet-summary');
+    const result =
+      await api('/api/fleet-summary');
 
-    state.fleet = r.summary || null;
+    state.fleet =
+      result.summary || null;
   } catch {
     state.fleet = null;
   }
 }
 
-/* =========================
+/* =========================================================
    AUTHENTICATION
-========================= */
+========================================================= */
 
 async function boot() {
   try {
-    const r = await api('/api/me');
+    const result =
+      await api('/api/me');
 
-    if (!r.user) {
-      throw Error('Not authenticated');
+    if (!result.user) {
+      throw new Error(
+        'Not authenticated'
+      );
     }
 
-    state.me = r.user;
+    state.me =
+      normalizeUser(result.user);
 
     await load();
 
     render();
-  } catch {
+  } catch (error) {
     state.me = null;
     login();
   }
@@ -199,14 +703,33 @@ function login() {
   app.innerHTML = `
     <div class="login">
       <div class="loginbox">
-        <div class="brand">THE BG</div>
-        <div class="sub">ONE COMPANY MANAGEMENT PLATFORM</div>
 
-        <h2>Sign in</h2>
+        <div class="brand">
+          THE BG
+        </div>
 
-        <form onsubmit="doLogin(event)" class="form">
+        <div class="sub">
+          ONE COMPANY MANAGEMENT PLATFORM
+        </div>
 
-          <select id="username">
+        <h2>
+          Sign in
+        </h2>
+
+        <form
+          class="form"
+          onsubmit="doLogin(event)"
+        >
+
+          <label>
+            Account
+          </label>
+
+          <select
+            id="username"
+            required
+          >
+
             <option value="d1">
               D1 — MANISHIMWE FARADJI
             </option>
@@ -226,44 +749,64 @@ function login() {
             <option value="d5">
               D5 — IMANANIYOGISUBIZO YUSSUF
             </option>
+
           </select>
+
+          <label>
+            Password
+          </label>
 
           <input
             id="password"
             type="password"
             placeholder="Password"
             required
+            autocomplete="current-password"
           >
 
-          <button class="btn" type="submit">
+          <button
+            class="btn"
+            type="submit"
+          >
             Sign in
           </button>
 
         </form>
 
         <p class="muted">
-          Production deployment uses the password configured by the administrator.
+          Sign in with your THE BG account.
         </p>
+
       </div>
     </div>
   `;
 }
 
-async function doLogin(e) {
-  e.preventDefault();
+async function doLogin(event) {
+  event.preventDefault();
+
+  const username =
+    $('username')?.value;
+
+  const password =
+    $('password')?.value;
 
   try {
     await api('/api/login', {
       method: 'POST',
+
       body: JSON.stringify({
-        username: $('username').value,
-        password: $('password').value
+        username,
+        password
       })
     });
 
     await boot();
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(
+      error.message ||
+      'Sign in failed.'
+    );
   }
 }
 
@@ -280,9 +823,9 @@ async function logout() {
   login();
 }
 
-/* =========================
+/* =========================================================
    PERMISSIONS
-========================= */
+========================================================= */
 
 const permissions = {
   D1: [
@@ -350,18 +893,29 @@ const permissions = {
   ]
 };
 
-function can(page) {
-  if (!state.me) return false;
-
-  const list =
-    permissions[state.me.department_id] || [];
-
-  return list.includes(page);
+function myDepartmentCode() {
+  return (
+    state.me?.department_code ||
+    ''
+  ).toUpperCase();
 }
 
-/* =========================
+function can(page) {
+  if (!state.me) {
+    return false;
+  }
+
+  const code =
+    myDepartmentCode();
+
+  return (
+    permissions[code] || []
+  ).includes(page);
+}
+
+/* =========================================================
    NAVIGATION
-========================= */
+========================================================= */
 
 const nav = [
   ['dashboard', 'Dashboard'],
@@ -377,13 +931,37 @@ const nav = [
   ['audit', 'Audit Trail']
 ];
 
+function go(page) {
+  if (!can(page)) {
+    page = 'dashboard';
+  }
+
+  state.page = page;
+
+  render();
+}
+
+/* =========================================================
+   SHELL
+========================================================= */
+
 function shell(title, body) {
   if (!state.me) {
     login();
     return;
   }
 
-  const allowed = nav.filter(([id]) => can(id));
+  const code =
+    myDepartmentCode();
+
+  const dept =
+    getDepartment(code);
+
+  const allowed =
+    nav.filter(([id]) => can(id));
+
+  const name =
+    userName(state.me);
 
   app.innerHTML = `
     <div class="layout">
@@ -399,22 +977,43 @@ function shell(title, body) {
         </div>
 
         <div class="user">
-          <b>${esc(state.me.name)}</b>
-          <span>${esc(state.me.department_id)}</span>
+
+          <b>
+            ${esc(name)}
+          </b>
+
+          <span>
+            ${esc(code)}
+            —
+            ${esc(
+              dept?.name ||
+              state.me.department_name ||
+              ''
+            )}
+          </span>
+
         </div>
 
         <div class="nav">
 
-          ${allowed.map(([id, t]) => `
-            <button
-              class="${state.page === id ? 'active' : ''}"
-              onclick="go('${id}')"
-            >
-              ${t}
-            </button>
-          `).join('')}
+          ${allowed.map(
+            ([id, label]) => `
+              <button
+                class="${
+                  state.page === id
+                    ? 'active'
+                    : ''
+                }"
+                onclick="go('${id}')"
+              >
+                ${esc(label)}
+              </button>
+            `
+          ).join('')}
 
-          <button onclick="logout()">
+          <button
+            onclick="logout()"
+          >
             Logout
           </button>
 
@@ -427,20 +1026,28 @@ function shell(title, body) {
         <header class="top">
 
           <div>
+
             <div class="eyebrow">
               THE BG WEB
             </div>
 
             <h1>
-              ${title}
+              ${esc(title)}
             </h1>
+
           </div>
 
-          <span class="badge">
-            ${esc(state.me.department_id)}
+          <div class="badge">
+
+            <b>
+              ${esc(code)}
+            </b>
+
             ·
-            ${esc(state.me.name)}
-          </span>
+
+            ${esc(name)}
+
+          </div>
 
         </header>
 
@@ -459,61 +1066,81 @@ function shell(title, body) {
         ['fleet', 'Fleet'],
         ['audit', 'Audit']
       ]
-      .filter(([id]) => can(id))
-      .map(([id, t]) => `
-        <button onclick="go('${id}')">
-          ${t}
-        </button>
-      `)
+      .filter(
+        ([id]) => can(id)
+      )
+      .map(
+        ([id, label]) => `
+          <button
+            onclick="go('${id}')"
+          >
+            ${esc(label)}
+          </button>
+        `
+      )
       .join('')}
 
     </nav>
   `;
 }
 
-function go(page) {
-  if (!can(page)) {
-    page = 'dashboard';
-  }
-
-  state.page = page;
-  render();
-}
-
-const card = (a, b) => `
+const card = (label, value) => `
   <div class="card stat">
-    <span>${a}</span>
-    <strong>${b}</strong>
+
+    <span>
+      ${esc(label)}
+    </span>
+
+    <strong>
+      ${esc(value)}
+    </strong>
+
   </div>
 `;
 
-/* =========================
+/* =========================================================
    DASHBOARD
-========================= */
+========================================================= */
 
 function dashboard() {
-  const d = state.data;
+  const d =
+    state.data;
 
-  const inc = d.income.reduce(
-    (a, x) => a + Number(x.amount || 0),
-    0
-  );
+  const income =
+    d.income.reduce(
+      (sum, x) =>
+        sum +
+        Number(x.amount || 0),
+      0
+    );
 
-  const exp = d.expenses.reduce(
-    (a, x) => a + Number(x.amount || 0),
-    0
-  );
+  const expenses =
+    d.expenses.reduce(
+      (sum, x) =>
+        sum +
+        Number(x.amount || 0),
+      0
+    );
 
-  const done = d.tasks.filter(
-    x => x.status === 'Completed'
-  ).length;
+  const completed =
+    d.tasks.filter(
+      x =>
+        x.status ===
+        'Completed'
+    ).length;
 
-  const over = d.tasks.filter(
-    x =>
-      x.status !== 'Completed' &&
-      x.deadline &&
-      x.deadline < today()
-  ).length;
+  const overdue =
+    d.tasks.filter(t => {
+      const deadline =
+        getTaskDeadline(t);
+
+      return (
+        deadline &&
+        deadline < today() &&
+        t.status !==
+          'Completed'
+      );
+    }).length;
 
   shell(
     'THE BG TODAY',
@@ -522,7 +1149,9 @@ function dashboard() {
 
         ${card(
           'Active Users',
-          d.users.filter(x => x.active).length
+          d.users.filter(
+            x => x.active
+          ).length
         )}
 
         ${card(
@@ -532,27 +1161,29 @@ function dashboard() {
 
         ${card(
           'Completed',
-          done
+          completed
         )}
 
         ${card(
           'Overdue',
-          over
+          overdue
         )}
 
         ${card(
           'Income',
-          money(inc)
+          money(income)
         )}
 
         ${card(
           'Expenses',
-          money(exp)
+          money(expenses)
         )}
 
         ${card(
           'Net Result',
-          money(inc - exp)
+          money(
+            income - expenses
+          )
         )}
 
         ${card(
@@ -570,41 +1201,82 @@ function dashboard() {
             Department Performance
           </h2>
 
-          ${d.departments.map(x => {
+          ${d.departments.map(
+            dept => {
 
-            const ts = d.tasks.filter(
-              t => t.responsible_name === x.person
-            );
+              const code =
+                String(
+                  dept.code || ''
+                ).toUpperCase();
 
-            const sc = ts.length
-              ? Math.round(
-                  ts.filter(
-                    t => t.status === 'Completed'
-                  ).length /
-                  ts.length *
-                  100
-                )
-              : 0;
+              const departmentTasks =
+                d.tasks.filter(
+                  t =>
+                    String(
+                      t.department_code ||
+                      ''
+                    ).toUpperCase() ===
+                    code
+                );
 
-            return `
-              <div class="row">
+              const responsibleTasks =
+                d.tasks.filter(
+                  t => {
+                    const user =
+                      findUser(
+                        getTaskResponsibleId(t)
+                      );
 
-                <b>
-                  ${esc(x.id)}
-                </b>
+                    return (
+                      user &&
+                      getDepartmentCodeFromUser(
+                        user
+                      ) === code
+                    );
+                  }
+                );
 
-                <span>
-                  ${esc(x.person)}
-                </span>
+              const tasks =
+                departmentTasks.length
+                  ? departmentTasks
+                  : responsibleTasks;
 
-                <b>
-                  ${sc}%
-                </b>
+              const score =
+                tasks.length
+                  ? Math.round(
+                      tasks.filter(
+                        t =>
+                          t.status ===
+                          'Completed'
+                      ).length /
+                      tasks.length *
+                      100
+                    )
+                  : 0;
 
-              </div>
-            `;
+              return `
+                <div class="row">
 
-          }).join('')}
+                  <b>
+                    ${esc(code)}
+                  </b>
+
+                  <span>
+                    ${esc(
+                      getDepartmentOfficer(
+                        dept
+                      )
+                    )}
+                  </span>
+
+                  <b>
+                    ${score}%
+                  </b>
+
+                </div>
+              `;
+            }
+          ).join('')}
 
         </div>
 
@@ -618,18 +1290,34 @@ function dashboard() {
             state.alerts.length
               ? state.alerts
                   .slice(0, 8)
-                  .map(a => `
-                    <div class="alert ${esc(
-                      a.severity || 'info'
-                    )}">
-                      <b>
-                        ${esc(a.title || '')}
-                      </b>
-                      <div>
-                        ${esc(a.message || '')}
+                  .map(
+                    alert => `
+                      <div
+                        class="alert ${
+                          esc(
+                            alert.severity ||
+                            'info'
+                          )
+                        }"
+                      >
+
+                        <b>
+                          ${esc(
+                            alert.title ||
+                            ''
+                          )}
+                        </b>
+
+                        <div>
+                          ${esc(
+                            alert.message ||
+                            ''
+                          )}
+                        </div>
+
                       </div>
-                    </div>
-                  `)
+                    `
+                  )
                   .join('')
               : `
                 <p class="muted">
@@ -645,86 +1333,215 @@ function dashboard() {
   );
 }
 
-/* =========================
+/* =========================================================
    DEPARTMENTS
-========================= */
+========================================================= */
 
 function departments() {
+  const myCode =
+    myDepartmentCode();
+
   shell(
     'Departments',
     `
       <div class="grid">
 
-        ${state.data.departments.map(d => {
+        ${state.data.departments.map(
+          d => {
 
-          const mine =
-            d.id === state.me.department_id;
+            const code =
+              String(
+                d.code || ''
+              ).toUpperCase();
 
-          return `
-            <div class="card">
+            const mine =
+              code === myCode;
 
-              <span class="eyebrow">
-                ${esc(d.id)}
-                ${mine ? ' · YOUR WORKSPACE' : ''}
-              </span>
+            const departmentUsers =
+              state.data.users.filter(
+                u =>
+                  getDepartmentCodeFromUser(
+                    u
+                  ) === code
+              );
 
-              <h2>
-                ${esc(d.position)}
-              </h2>
+            const departmentTasks =
+              state.data.tasks.filter(
+                t => {
+                  const responsible =
+                    findUser(
+                      getTaskResponsibleId(t)
+                    );
 
-              <h3>
-                ${esc(d.person)}
-              </h3>
+                  return (
+                    String(
+                      t.department_code ||
+                      ''
+                    ).toUpperCase() ===
+                      code ||
+                    (
+                      responsible &&
+                      getDepartmentCodeFromUser(
+                        responsible
+                      ) === code
+                    )
+                  );
+                }
+              );
 
-              <p>
-                ${esc(d.responsibility)}
-              </p>
+            const reports =
+              state.data.reports.filter(
+                r => {
+                  const u =
+                    findUser(
+                      r.user_id
+                    );
 
-              <div class="tag">
-                One responsible person
-              </div>
+                  return (
+                    u &&
+                    getDepartmentCodeFromUser(
+                      u
+                    ) === code
+                  );
+                }
+              );
 
-              <div class="row">
-                <span>Tasks</span>
-                <b>
+            return `
+              <div class="card">
+
+                <span class="eyebrow">
+
+                  ${esc(code)}
+
                   ${
-                    state.data.tasks.filter(
-                      t => t.responsible_name === d.person
-                    ).length
+                    mine
+                      ? ' · YOUR WORKSPACE'
+                      : ''
                   }
-                </b>
+
+                </span>
+
+                <h2>
+                  ${esc(
+                    d.name
+                  )}
+                </h2>
+
+                <h3>
+                  ${esc(
+                    getDepartmentOfficer(
+                      d
+                    )
+                  )}
+                </h3>
+
+                <p>
+                  ${esc(
+                    d.description
+                  )}
+                </p>
+
+                <div class="tag">
+                  ${departmentUsers.length}
+                  account(s)
+                </div>
+
+                <div class="row">
+
+                  <span>
+                    Tasks
+                  </span>
+
+                  <b>
+                    ${departmentTasks.length}
+                  </b>
+
+                </div>
+
+                <div class="row">
+
+                  <span>
+                    Reports
+                  </span>
+
+                  <b>
+                    ${reports.length}
+                  </b>
+
+                </div>
+
               </div>
-
-              <div class="row">
-                <span>Reports</span>
-                <b>
-                  ${
-                    state.data.reports.filter(
-                      r => r.user_name === d.person
-                    ).length
-                  }
-                </b>
-              </div>
-
-            </div>
-          `;
-
-        }).join('')}
+            `;
+          }
+        ).join('')}
 
       </div>
 
       ${
-        state.me.department_id === 'D1'
+        myCode === 'D1'
           ? `
             <div class="section card">
 
               <h2>
-                Accounts
+                Account Control
               </h2>
 
-              <p class="muted">
-                D1 account controls are available through the secure API for production administration.
+              <p>
+                D1 is the system-level administration
+                department. User account management is
+                controlled through the secure server API.
               </p>
+
+              <div class="tablewrap">
+
+                <table class="table">
+
+                  <tr>
+                    <th>Account</th>
+                    <th>Name</th>
+                    <th>Department</th>
+                    <th>Status</th>
+                  </tr>
+
+                  ${state.data.users.map(
+                    u => `
+                      <tr>
+
+                        <td>
+                          ${esc(
+                            u.username
+                          )}
+                        </td>
+
+                        <td>
+                          ${esc(
+                            userName(u)
+                          )}
+                        </td>
+
+                        <td>
+                          ${esc(
+                            getDepartmentCodeFromUser(
+                              u
+                            )
+                          )}
+                        </td>
+
+                        <td>
+                          ${
+                            u.active
+                              ? 'Active'
+                              : 'Inactive'
+                          }
+                        </td>
+
+                      </tr>
+                    `
+                  ).join('')}
+
+                </table>
+
+              </div>
 
             </div>
           `
@@ -734,19 +1551,35 @@ function departments() {
   );
 }
 
-/* =========================
+/* =========================================================
    TASKS
-========================= */
+========================================================= */
 
 function tasks() {
-  const users = state.data.users.filter(
-    u =>
-      u.active &&
-      (
-        state.me.department_id === 'D1' ||
-        u.department_id === state.me.department_id
-      )
-  );
+  const myCode =
+    myDepartmentCode();
+
+  const users =
+    state.data.users.filter(
+      u =>
+        u.active &&
+        (
+          myCode === 'D1' ||
+          getDepartmentCodeFromUser(
+            u
+          ) === myCode
+        )
+    );
+
+  const statuses = [
+    'Not Started',
+    'Accepted',
+    'Rejected',
+    'In Progress',
+    'Completed',
+    'Cancelled',
+    'On Hold'
+  ];
 
   shell(
     'Tasks',
@@ -766,19 +1599,40 @@ function tasks() {
 
             <input
               id="tn"
-              placeholder="Task name"
+              placeholder="Task title"
               required
             >
 
-            <select id="tu">
+            <select
+              id="tu"
+              required
+            >
 
-              ${users.map(u => `
-                <option value="${u.id}">
-                  ${esc(u.department_id)}
-                  —
-                  ${esc(u.name)}
-                </option>
-              `).join('')}
+              ${
+                users.length
+                  ? users.map(
+                      u => `
+                        <option
+                          value="${u.id}"
+                        >
+                          ${esc(
+                            getDepartmentCodeFromUser(
+                              u
+                            )
+                          )}
+                          —
+                          ${esc(
+                            userName(u)
+                          )}
+                        </option>
+                      `
+                    ).join('')
+                  : `
+                    <option value="">
+                      No available users
+                    </option>
+                  `
+              }
 
             </select>
 
@@ -790,6 +1644,7 @@ function tasks() {
               id="ts"
               type="date"
               value="${today()}"
+              required
             >
 
             <input
@@ -814,7 +1669,10 @@ function tasks() {
 
           </div>
 
-          <button class="btn">
+          <button
+            class="btn"
+            type="submit"
+          >
             Create Task
           </button>
 
@@ -824,98 +1682,156 @@ function tasks() {
 
       <div class="card section tablewrap">
 
+        <h2>
+          Task Register
+        </h2>
+
         <table class="table">
 
           <tr>
-            <th>Task</th>
-            <th>Responsible</th>
-            <th>Deadline</th>
-            <th>Priority</th>
-            <th>Status</th>
+
+            <th>
+              Task
+            </th>
+
+            <th>
+              Responsible
+            </th>
+
+            <th>
+              Deadline
+            </th>
+
+            <th>
+              Priority
+            </th>
+
+            <th>
+              Status
+            </th>
+
           </tr>
 
-          ${state.data.tasks.map(t => {
+          ${
+            state.data.tasks.length
+              ? state.data.tasks.map(
+                  t => {
 
-            const isResponsible =
-              Number(t.responsible_user) ===
-              Number(state.me.id);
+                    const responsibleId =
+                      getTaskResponsibleId(t);
 
-            const canControl =
-              state.me.department_id === 'D1' ||
-              isResponsible;
+                    const isResponsible =
+                      Number(
+                        responsibleId
+                      ) ===
+                      Number(
+                        state.me.id
+                      );
 
-            const statuses = [
-              'Not Started',
-              'Accepted',
-              'Rejected',
-              'In Progress',
-              'Completed',
-              'Cancelled',
-              'On Hold'
-            ];
+                    const canControl =
+                      myCode === 'D1' ||
+                      isResponsible;
 
-            return `
-              <tr>
+                    return `
+                      <tr>
 
-                <td>
-                  <b>
-                    ${esc(t.name)}
-                  </b>
+                        <td>
 
-                  <small>
-                    ${esc(t.description || '')}
-                  </small>
-                </td>
+                          <b>
+                            ${esc(
+                              getTaskTitle(t)
+                            )}
+                          </b>
 
-                <td>
-                  ${esc(t.responsible_name || '-')}
-                </td>
+                          <small>
+                            ${esc(
+                              t.description ||
+                              ''
+                            )}
+                          </small>
 
-                <td>
-                  ${t.deadline || '-'}
-                </td>
+                        </td>
 
-                <td>
-                  ${esc(t.priority || '-')}
-                </td>
+                        <td>
+                          ${esc(
+                            t.responsible_name ||
+                            getUserNameById(
+                              responsibleId
+                            )
+                          )}
+                        </td>
 
-                <td>
+                        <td>
+                          ${esc(
+                            getTaskDeadline(t) ||
+                            '-'
+                          )}
+                        </td>
 
-                  ${
-                    canControl
-                      ? `
-                        <select
-                          onchange="changeTask(${t.id},this.value)"
-                        >
+                        <td>
+                          ${esc(
+                            t.priority ||
+                            'Normal'
+                          )}
+                        </td>
 
-                          ${statuses.map(s => `
-                            <option
-                              value="${esc(s)}"
-                              ${
-                                s === t.status
-                                  ? 'selected'
-                                  : ''
-                              }
-                            >
-                              ${esc(s)}
-                            </option>
-                          `).join('')}
+                        <td>
 
-                        </select>
-                      `
-                      : `
-                        <span class="tag">
-                          ${esc(t.status)}
-                        </span>
-                      `
+                          ${
+                            canControl
+                              ? `
+                                <select
+                                  onchange="changeTask(
+                                    ${t.id},
+                                    this.value
+                                  )"
+                                >
+
+                                  ${statuses.map(
+                                    s => `
+                                      <option
+                                        value="${esc(
+                                          s
+                                        )}"
+                                        ${
+                                          s ===
+                                          t.status
+                                            ? 'selected'
+                                            : ''
+                                        }
+                                      >
+                                        ${esc(s)}
+                                      </option>
+                                    `
+                                  ).join('')}
+
+                                </select>
+                              `
+                              : `
+                                <span class="tag">
+                                  ${esc(
+                                    t.status
+                                  )}
+                                </span>
+                              `
+                          }
+
+                        </td>
+
+                      </tr>
+                    `;
                   }
-
-                </td>
-
-              </tr>
-            `;
-
-          }).join('')}
+                ).join('')
+              : `
+                <tr>
+                  <td colspan="5">
+                    <p class="muted">
+                      No tasks available.
+                    </p>
+                  </td>
+                </tr>
+              `
+          }
 
         </table>
 
@@ -924,64 +1840,97 @@ function tasks() {
   );
 }
 
-async function createTask(e) {
-  e.preventDefault();
+async function createTask(event) {
+  event.preventDefault();
 
   try {
     await api('/api/tasks', {
       method: 'POST',
+
       body: JSON.stringify({
-        name: $('tn').value,
-        responsible_user: Number($('tu').value),
-        start_date: $('ts').value,
-        deadline: $('td').value,
-        priority: $('tp').value,
-        description: $('tx').value
+        title:
+          $('tn').value,
+
+        responsible_id:
+          Number(
+            $('tu').value
+          ),
+
+        department_id:
+          Number(
+            findUser(
+              Number(
+                $('tu').value
+              )
+            )?.department_id ||
+            state.me.department_id
+          ),
+
+        start_date:
+          $('ts').value,
+
+        due_date:
+          $('td').value || null,
+
+        priority:
+          $('tp').value,
+
+        description:
+          $('tx').value
       })
     });
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
-async function changeTask(id, status) {
+async function changeTask(
+  id,
+  status
+) {
   try {
-
     let reason = '';
 
     if (status === 'Rejected') {
-      reason = prompt(
-        'Reason for rejecting this task:'
-      );
+      reason =
+        prompt(
+          'Reason for rejecting this task:'
+        ) || '';
 
-      if (!reason || !reason.trim()) {
+      if (!reason.trim()) {
         await refresh();
         return;
       }
     }
 
-    await api('/api/tasks/' + id, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        status,
-        reason
-      })
-    });
+    await api(
+      `/api/tasks/${id}`,
+      {
+        method: 'PATCH',
+
+        body: JSON.stringify({
+          status,
+          rejection_reason:
+            reason,
+          reason
+        })
+      }
+    );
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
     await refresh();
   }
 }
 
-/* =========================
+/* =========================================================
    DAILY WORK
-========================= */
+========================================================= */
 
 function activities() {
   shell(
@@ -1002,6 +1951,7 @@ function activities() {
             id="adate"
             type="date"
             value="${today()}"
+            required
           >
 
           <textarea
@@ -1028,7 +1978,10 @@ function activities() {
             placeholder="Time spent (hours)"
           >
 
-          <button class="btn">
+          <button
+            class="btn"
+            type="submit"
+          >
             Save Daily Activity
           </button>
 
@@ -1038,67 +1991,116 @@ function activities() {
 
       <div class="section grid">
 
-        ${state.activities
-          .slice(0, 30)
-          .map(a => `
-            <div class="card">
+        ${
+          state.data.activities.length
+            ? state.data.activities
+                .slice(0, 30)
+                .map(
+                  a => `
+                    <div class="card">
 
-              <b>
-                ${esc(a.user_name)}
-              </b>
+                      <b>
+                        ${esc(
+                          a.user_name ||
+                          getUserNameById(
+                            a.user_id
+                          )
+                        )}
+                      </b>
 
-              · ${esc(a.date)}
+                      ·
 
-              <p>
-                ${esc(a.done)}
-              </p>
+                      ${esc(
+                        getActivityDate(a)
+                      )}
 
-              <small>
-                ${esc(a.unfinished || '')}
-              </small>
+                      <p>
+                        ${esc(
+                          getActivityText(a)
+                        )}
+                      </p>
 
-            </div>
-          `)
-          .join('')}
+                      ${
+                        a.unfinished
+                          ? `
+                            <small>
+                              Unfinished:
+                              ${esc(
+                                a.unfinished
+                              )}
+                            </small>
+                          `
+                          : ''
+                      }
+
+                    </div>
+                  `
+                )
+                .join('')
+            : `
+              <div class="card">
+                <p class="muted">
+                  No daily activities yet.
+                </p>
+              </div>
+            `
+        }
 
       </div>
     `
   );
 }
 
-async function saveActivity(e) {
-  e.preventDefault();
+async function saveActivity(event) {
+  event.preventDefault();
 
   try {
     await api('/api/activities', {
       method: 'POST',
+
       body: JSON.stringify({
-        date: $('adate').value,
-        done: $('adone').value,
-        unfinished: $('aunfinished').value,
-        reason: $('areason').value,
-        time_spent: Number(
-          $('atime').value || 0
-        )
+        activity_date:
+          $('adate').value,
+
+        title:
+          'Daily Work',
+
+        description:
+          $('adone').value,
+
+        unfinished:
+          $('aunfinished').value,
+
+        reason:
+          $('areason').value,
+
+        time_spent:
+          Number(
+            $('atime').value || 0
+          )
       })
     });
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
-/* =========================
+/* =========================================================
    REPORTS
-========================= */
+========================================================= */
 
 function reports() {
   shell(
     'Reports',
     `
       <div class="card">
+
+        <h2>
+          Submit Report
+        </h2>
 
         <form
           class="form"
@@ -1108,17 +2110,34 @@ function reports() {
           <div class="two">
 
             <select id="rt">
-              <option>Daily Report</option>
-              <option>Weekly Report</option>
-              <option>Monthly Report</option>
-              <option>Project Report</option>
-              <option>Financial Report</option>
+
+              <option>
+                Daily Report
+              </option>
+
+              <option>
+                Weekly Report
+              </option>
+
+              <option>
+                Monthly Report
+              </option>
+
+              <option>
+                Project Report
+              </option>
+
+              <option>
+                Financial Report
+              </option>
+
             </select>
 
             <input
               id="rdate"
               type="date"
               value="${today()}"
+              required
             >
 
           </div>
@@ -1130,7 +2149,10 @@ function reports() {
             required
           ></textarea>
 
-          <button class="btn">
+          <button
+            class="btn"
+            type="submit"
+          >
             Submit Report
           </button>
 
@@ -1140,56 +2162,93 @@ function reports() {
 
       <div class="section grid">
 
-        ${state.data.reports
-          .map(r => `
-            <div class="card">
+        ${
+          state.data.reports.length
+            ? state.data.reports.map(
+                r => `
+                  <div class="card">
 
-              <span class="tag">
-                ${esc(r.type)}
-              </span>
+                    <span class="tag">
+                      ${esc(
+                        getReportTitle(r)
+                      )}
+                    </span>
 
-              <p>
-                ${esc(r.body)}
-              </p>
+                    <p>
+                      ${esc(
+                        getReportContent(r)
+                      )}
+                    </p>
 
-              <small>
-                ${esc(r.user_name)}
-                · ${esc(r.date)}
-                · ${esc(r.status)}
-              </small>
+                    <small>
+                      ${esc(
+                        r.user_name ||
+                        getUserNameById(
+                          r.user_id
+                        )
+                      )}
 
-            </div>
-          `)
-          .join('')}
+                      ·
+
+                      ${esc(
+                        getReportDate(r)
+                      )}
+
+                      ·
+
+                      ${esc(
+                        r.status ||
+                        'Submitted'
+                      )}
+
+                    </small>
+
+                  </div>
+                `
+              ).join('')
+            : `
+              <div class="card">
+                <p class="muted">
+                  No reports yet.
+                </p>
+              </div>
+            `
+        }
 
       </div>
     `
   );
 }
 
-async function createReport(e) {
-  e.preventDefault();
+async function createReport(event) {
+  event.preventDefault();
 
   try {
     await api('/api/reports', {
       method: 'POST',
+
       body: JSON.stringify({
-        type: $('rt').value,
-        body: $('rb').value,
-        date: $('rdate').value
+        title:
+          $('rt').value,
+
+        content:
+          $('rb').value,
+
+        report_date:
+          $('rdate').value
       })
     });
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
-/* =========================
+/* =========================================================
    GOALS
-========================= */
+========================================================= */
 
 function goals() {
   shell(
@@ -1197,34 +2256,27 @@ function goals() {
     `
       <div class="card">
 
+        <h2>
+          Create Goal
+        </h2>
+
         <form
           class="form"
           onsubmit="createGoal(event)"
         >
 
-          <div class="two">
+          <input
+            id="gt"
+            placeholder="Goal title"
+            required
+          >
 
-            <input
-              id="gt"
-              placeholder="Goal title"
-              required
-            >
-
-            <select id="gs">
-              <option>Department</option>
-              <option>Individual</option>
-              <option>Monthly</option>
-              <option>Yearly</option>
-            </select>
-
-          </div>
+          <textarea
+            id="gd"
+            placeholder="Goal description"
+          ></textarea>
 
           <div class="two">
-
-            <input
-              id="gperiod"
-              placeholder="Period e.g. Sep 2026"
-            >
 
             <input
               id="gtarget"
@@ -1232,11 +2284,20 @@ function goals() {
               min="1"
               value="100"
               placeholder="Target"
+              required
+            >
+
+            <input
+              id="gdate"
+              type="date"
             >
 
           </div>
 
-          <button class="btn">
+          <button
+            class="btn"
+            type="submit"
+          >
             Create Goal
           </button>
 
@@ -1246,223 +2307,396 @@ function goals() {
 
       <div class="section grid">
 
-        ${state.goals.map(g => {
+        ${
+          state.data.goals.length
+            ? state.data.goals.map(
+                g => {
 
-          const pct = Math.min(
-            100,
-            Math.round(
-              Number(g.achieved || 0) /
-              Math.max(
-                1,
-                Number(g.target || 0)
-              ) *
-              100
-            )
-          );
+                  const target =
+                    getGoalTarget(g);
 
-          return `
-            <div class="card">
+                  const achieved =
+                    getGoalProgress(g);
 
-              <b>
-                ${esc(g.title)}
-              </b>
+                  const percentage =
+                    target > 0
+                      ? Math.min(
+                          100,
+                          Math.round(
+                            achieved /
+                            target *
+                            100
+                          )
+                        )
+                      : 0;
 
-              <p>
-                ${esc(g.scope)}
-                ·
-                ${esc(g.period || 'No period')}
-              </p>
+                  return `
+                    <div class="card">
 
-              <div class="progress">
-                <i
-                  style="width:${pct}%"
-                ></i>
+                      <b>
+                        ${esc(
+                          g.title
+                        )}
+                      </b>
+
+                      <p>
+                        ${esc(
+                          g.description ||
+                          ''
+                        )}
+                      </p>
+
+                      <div class="progress">
+                        <i
+                          style="width:${percentage}%"
+                        ></i>
+                      </div>
+
+                      <div class="row">
+
+                        <span>
+                          ${achieved}
+                          /
+                          ${target}
+                        </span>
+
+                        <b>
+                          ${percentage}%
+                        </b>
+
+                      </div>
+
+                      <button
+                        class="btn light"
+                        onclick="updateGoal(
+                          ${g.id},
+                          ${achieved}
+                        )"
+                      >
+                        Update achievement
+                      </button>
+
+                    </div>
+                  `;
+                }
+              ).join('')
+            : `
+              <div class="card">
+                <p class="muted">
+                  No goals yet.
+                </p>
               </div>
-
-              <div class="row">
-
-                <span>
-                  ${Number(g.achieved || 0)}
-                  /
-                  ${Number(g.target || 0)}
-                </span>
-
-                <b>
-                  ${pct}%
-                </b>
-
-              </div>
-
-              <button
-                class="btn light"
-                onclick="updateGoal(
-                  ${g.id},
-                  ${Number(g.achieved || 0)}
-                )"
-              >
-                Update achievement
-              </button>
-
-            </div>
-          `;
-
-        }).join('')}
+            `
+        }
 
       </div>
     `
   );
 }
 
-async function createGoal(e) {
-  e.preventDefault();
+async function createGoal(event) {
+  event.preventDefault();
 
   try {
     await api('/api/goals', {
       method: 'POST',
+
       body: JSON.stringify({
-        title: $('gt').value,
-        scope: $('gs').value,
-        period: $('gperiod').value,
-        target: Number(
-          $('gtarget').value
-        ),
-        achieved: 0,
+        title:
+          $('gt').value,
+
+        description:
+          $('gd').value,
+
         department_id:
-          state.me.department_id
+          Number(
+            state.me.department_id
+          ),
+
+        target_date:
+          $('gdate').value ||
+          null,
+
+        progress: 0
       })
     });
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
-async function updateGoal(id, current) {
-  const v = prompt(
-    'New achieved value:',
-    current
-  );
+async function updateGoal(
+  id,
+  current
+) {
+  const value =
+    prompt(
+      'New progress value:',
+      current
+    );
 
-  if (v === null) return;
+  if (value === null) {
+    return;
+  }
 
-  const value = Number(v);
+  const progress =
+    Number(value);
 
-  if (!Number.isFinite(value) || value < 0) {
-    alert('Please enter a valid number.');
+  if (
+    !Number.isFinite(progress) ||
+    progress < 0
+  ) {
+    alert(
+      'Please enter a valid number.'
+    );
     return;
   }
 
   try {
-    await api('/api/goals/' + id, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        achieved: value
-      })
-    });
+    await api(
+      `/api/goals/${id}`,
+      {
+        method: 'PATCH',
+
+        body: JSON.stringify({
+          progress
+        })
+      }
+    );
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
-/* =========================
+/* =========================================================
    PERFORMANCE
-========================= */
+========================================================= */
+
+function calculatePerformance(user) {
+  const tasks =
+    state.data.tasks.filter(
+      t =>
+        Number(
+          getTaskResponsibleId(t)
+        ) ===
+        Number(user.id)
+    );
+
+  const completed =
+    tasks.filter(
+      t =>
+        t.status ===
+        'Completed'
+    );
+
+  const rejected =
+    tasks.filter(
+      t =>
+        t.status ===
+        'Rejected'
+    );
+
+  const activities =
+    state.data.activities.filter(
+      a =>
+        Number(a.user_id) ===
+        Number(user.id)
+    );
+
+  const reports =
+    state.data.reports.filter(
+      r =>
+        Number(r.user_id) ===
+        Number(user.id)
+    );
+
+  const completedOnTime =
+    completed.filter(
+      t => {
+
+        const deadline =
+          getTaskDeadline(t);
+
+        if (!deadline) {
+          return true;
+        }
+
+        const completedAt =
+          safeDate(
+            t.completed_at
+          );
+
+        if (!completedAt) {
+          return false;
+        }
+
+        return (
+          completedAt <=
+          safeDate(deadline)
+        );
+      }
+    );
+
+  const completionScore =
+    tasks.length
+      ? completed.length /
+        tasks.length *
+        60
+      : 0;
+
+  const timingScore =
+    tasks.length
+      ? completedOnTime.length /
+        tasks.length *
+        20
+      : 0;
+
+  const activityScore =
+    activities.length
+      ? 10
+      : 0;
+
+  const reportScore =
+    reports.length
+      ? 10
+      : 0;
+
+  const score =
+    Math.min(
+      100,
+      Math.round(
+        completionScore +
+        timingScore +
+        activityScore +
+        reportScore
+      )
+    );
+
+  return {
+    user,
+    tasks: tasks.length,
+    completed: completed.length,
+    rejected: rejected.length,
+    activities: activities.length,
+    reports: reports.length,
+    score
+  };
+}
 
 function performance() {
-  const d = state.data;
-
-  const s = d.users
-    .map(u => {
-
-      const t = d.tasks.filter(
-        x =>
-          Number(x.responsible_user) ===
-          Number(u.id)
+  const all =
+    state.data.users
+      .filter(u => u.active)
+      .map(
+        calculatePerformance
+      )
+      .sort(
+        (a, b) =>
+          b.score -
+          a.score
       );
 
-      const done = t.filter(
-        x => x.status === 'Completed'
-      );
-
-      const rejected = t.filter(
-        x => x.status === 'Rejected'
-      );
-
-      const a = state.activities.filter(
-        x =>
-          Number(x.user_id) ===
-          Number(u.id)
-      );
-
-      const r = d.reports.filter(
-        x =>
-          Number(x.user_id) ===
-          Number(u.id)
-      );
-
-      const taskScore = t.length
-        ? (done.length / t.length) * 60
-        : 0;
-
-      const ontime = t.length
-        ? (
-            done.filter(
-              x =>
-                !x.deadline ||
-                x.deadline >= (
-                  x.completed_at
-                    ? String(x.completed_at).slice(0, 10)
-                    : x.deadline
-                )
-            ).length /
-            t.length
-          ) * 20
-        : 0;
-
-      const act = a.length
-        ? 10
-        : 0;
-
-      const rep = r.length
-        ? 10
-        : 0;
-
-      return {
-        u,
-        score: Math.round(
-          Math.min(
-            100,
-            taskScore +
-            ontime +
-            act +
-            rep
-          )
-        ),
-        rejected: rejected.length
-      };
-
-    })
-    .sort(
-      (a, b) =>
-        b.score - a.score
+  const mine =
+    calculatePerformance(
+      state.me
     );
 
   shell(
     'Performance',
     `
-      <div class="card">
+      <div class="grid">
+
+        ${card(
+          'Your Score',
+          `${mine.score}%`
+        )}
+
+        ${card(
+          'Your Tasks',
+          mine.tasks
+        )}
+
+        ${card(
+          'Completed',
+          mine.completed
+        )}
+
+        ${card(
+          'Rejected',
+          mine.rejected
+        )}
+
+        ${card(
+          'Daily Activities',
+          mine.activities
+        )}
+
+        ${card(
+          'Reports',
+          mine.reports
+        )}
+
+      </div>
+
+      <div class="section card">
 
         <h2>
-          System Data Ranking
+          My Performance
+        </h2>
+
+        <div class="card">
+
+          <h3>
+            ${esc(
+              userName(
+                state.me
+              )
+            )}
+          </h3>
+
+          <p>
+            ${esc(
+              myDepartmentCode()
+            )}
+            —
+            ${esc(
+              state.me.department_name ||
+              getDepartmentName(
+                myDepartmentCode()
+              )
+            )}
+          </p>
+
+          <div class="progress">
+            <i
+              style="width:${mine.score}%"
+            ></i>
+          </div>
+
+          <h2>
+            ${mine.score}%
+          </h2>
+
+        </div>
+
+      </div>
+
+      <div class="section card">
+
+        <h2>
+          System Performance Ranking
         </h2>
 
         <p class="muted">
-          Score uses task completion, completion timing, activity and reports.
+          Score is calculated from task completion,
+          on-time completion, daily work activity
+          and submitted reports.
         </p>
 
         <div class="tablewrap">
@@ -1470,40 +2704,84 @@ function performance() {
           <table class="table">
 
             <tr>
-              <th>#</th>
-              <th>Person</th>
-              <th>Department</th>
-              <th>Score</th>
-              <th>Rejected</th>
+
+              <th>
+                #
+              </th>
+
+              <th>
+                Person
+              </th>
+
+              <th>
+                Department
+              </th>
+
+              <th>
+                Tasks
+              </th>
+
+              <th>
+                Completed
+              </th>
+
+              <th>
+                Rejected
+              </th>
+
+              <th>
+                Score
+              </th>
+
             </tr>
 
-            ${s.map((x, i) => `
-              <tr>
+            ${all.map(
+              (item, index) => `
+                <tr>
 
-                <td>
-                  ${i + 1}
-                </td>
+                  <td>
+                    ${index + 1}
+                  </td>
 
-                <td>
-                  ${esc(x.u.name)}
-                </td>
+                  <td>
+                    <b>
+                      ${esc(
+                        userName(
+                          item.user
+                        )
+                      )}
+                    </b>
+                  </td>
 
-                <td>
-                  ${esc(x.u.department_id)}
-                </td>
+                  <td>
+                    ${esc(
+                      getDepartmentCodeFromUser(
+                        item.user
+                      )
+                    )}
+                  </td>
 
-                <td>
-                  <b>
-                    ${x.score}%
-                  </b>
-                </td>
+                  <td>
+                    ${item.tasks}
+                  </td>
 
-                <td>
-                  ${x.rejected}
-                </td>
+                  <td>
+                    ${item.completed}
+                  </td>
 
-              </tr>
-            `).join('')}
+                  <td>
+                    ${item.rejected}
+                  </td>
+
+                  <td>
+                    <b>
+                      ${item.score}%
+                    </b>
+                  </td>
+
+                </tr>
+              `
+            ).join('')}
 
           </table>
 
@@ -1514,24 +2792,29 @@ function performance() {
   );
 }
 
-/* =========================
+/* =========================================================
    FINANCE
-========================= */
+========================================================= */
 
 function finance() {
-  const d = state.data;
+  const d =
+    state.data;
 
-  const inc = d.income.reduce(
-    (a, x) =>
-      a + Number(x.amount || 0),
-    0
-  );
+  const income =
+    d.income.reduce(
+      (sum, x) =>
+        sum +
+        Number(x.amount || 0),
+      0
+    );
 
-  const exp = d.expenses.reduce(
-    (a, x) =>
-      a + Number(x.amount || 0),
-    0
-  );
+  const expenses =
+    d.expenses.reduce(
+      (sum, x) =>
+        sum +
+        Number(x.amount || 0),
+      0
+    );
 
   shell(
     'Finance',
@@ -1540,17 +2823,20 @@ function finance() {
 
         ${card(
           'Total Income',
-          money(inc)
+          money(income)
         )}
 
         ${card(
           'Total Expenses',
-          money(exp)
+          money(expenses)
         )}
 
         ${card(
           'Net Result',
-          money(inc - exp)
+          money(
+            income -
+            expenses
+          )
         )}
 
         ${card(
@@ -1594,11 +2880,27 @@ function finance() {
           <div class="two">
 
             <select id="etype">
-              <option>Fuel</option>
-              <option>Maintenance</option>
-              <option>Repairs</option>
-              <option>Salary / Commission</option>
-              <option>Other</option>
+
+              <option>
+                Fuel
+              </option>
+
+              <option>
+                Maintenance
+              </option>
+
+              <option>
+                Repairs
+              </option>
+
+              <option>
+                Salary / Commission
+              </option>
+
+              <option>
+                Other
+              </option>
+
             </select>
 
             <select id="emoto">
@@ -1607,13 +2909,21 @@ function finance() {
                 Company expense / no motorcycle
               </option>
 
-              ${d.motorcycles.map(m => `
-                <option value="${m.id}">
-                  ${esc(m.code)}
-                  —
-                  ${esc(m.plate || '')}
-                </option>
-              `).join('')}
+              ${d.motorcycles.map(
+                m => `
+                  <option
+                    value="${m.id}"
+                  >
+                    ${esc(
+                      getMotoCode(m)
+                    )}
+                    —
+                    ${esc(
+                      getMotoPlate(m)
+                    )}
+                  </option>
+                `
+              ).join('')}
 
             </select>
 
@@ -1624,7 +2934,10 @@ function finance() {
             placeholder="Description"
           >
 
-          <button class="btn">
+          <button
+            class="btn"
+            type="submit"
+          >
             Save Expense
           </button>
 
@@ -1633,7 +2946,7 @@ function finance() {
       </div>
 
       ${
-        state.me.department_id === 'D1'
+        myDepartmentCode() === 'D1'
           ? `
             <div class="section card">
 
@@ -1643,40 +2956,54 @@ function finance() {
 
               ${
                 d.changes.length
-                  ? d.changes.map(c => `
-                    <div class="change">
+                  ? d.changes.map(
+                      c => `
+                        <div class="change">
 
-                      <b>
-                        ${esc(c.record_type)}
-                        #${c.record_id}
-                      </b>
+                          <b>
+                            ${esc(
+                              c.reference_type ||
+                              c.record_type ||
+                              ''
+                            )}
+                            #${
+                              c.reference_id ||
+                              c.record_id ||
+                              ''
+                            }
+                          </b>
 
-                      <p>
-                        ${esc(c.reason || '')}
-                      </p>
+                          <p>
+                            ${esc(
+                              c.description ||
+                              c.reason ||
+                              ''
+                            )}
+                          </p>
 
-                      <button
-                        class="btn"
-                        onclick="decision(
-                          ${c.id},
-                          'Approved'
-                        )"
-                      >
-                        Approve
-                      </button>
+                          <button
+                            class="btn"
+                            onclick="decision(
+                              ${c.id},
+                              'Approved'
+                            )"
+                          >
+                            Approve
+                          </button>
 
-                      <button
-                        class="btn danger"
-                        onclick="decision(
-                          ${c.id},
-                          'Rejected'
-                        )"
-                      >
-                        Reject
-                      </button>
+                          <button
+                            class="btn danger"
+                            onclick="decision(
+                              ${c.id},
+                              'Rejected'
+                            )"
+                          >
+                            Reject
+                          </button>
 
-                    </div>
-                  `).join('')
+                        </div>
+                      `
+                    ).join('')
                   : `
                     <p class="muted">
                       No pending changes.
@@ -1691,45 +3018,75 @@ function finance() {
 
       <div class="section card tablewrap">
 
+        <h2>
+          Expenses
+        </h2>
+
         <table class="table">
 
           <tr>
-            <th>Date</th>
-            <th>Type</th>
-            <th>Moto</th>
-            <th>Amount</th>
-            <th>By</th>
+
+            <th>
+              Date
+            </th>
+
+            <th>
+              Type
+            </th>
+
+            <th>
+              Moto
+            </th>
+
+            <th>
+              Amount
+            </th>
+
+            <th>
+              By
+            </th>
+
           </tr>
 
-          ${d.expenses.map(x => `
-            <tr>
+          ${d.expenses.map(
+            x => `
+              <tr>
 
-              <td>
-                ${esc(x.date)}
-              </td>
+                <td>
+                  ${esc(
+                    x.date
+                  )}
+                </td>
 
-              <td>
-                ${esc(x.expense_type)}
-              </td>
+                <td>
+                  ${esc(
+                    x.expense_type
+                  )}
+                </td>
 
-              <td>
-                ${esc(x.motorcycle_code || '-')}
-              </td>
+                <td>
+                  ${esc(
+                    x.motorcycle_code ||
+                    '-'
+                  )}
+                </td>
 
-              <td>
-                ${money(x.amount)}
-              </td>
+                <td>
+                  ${money(
+                    x.amount
+                  )}
+                </td>
 
-              <td>
-                ${esc(
-                  x.entered_by_name ||
-                  x.entered_name ||
-                  '-'
-                )}
-              </td>
+                <td>
+                  ${esc(
+                    x.entered_by_name ||
+                    '-'
+                  )}
+                </td>
 
-            </tr>
-          `).join('')}
+              </tr>
+            `
+          ).join('')}
 
         </table>
 
@@ -1738,22 +3095,32 @@ function finance() {
   );
 }
 
-async function addExpense(e) {
-  e.preventDefault();
+async function addExpense(event) {
+  event.preventDefault();
 
   try {
     await api('/api/expenses', {
       method: 'POST',
+
       body: JSON.stringify({
-        date: $('edate').value,
+        expense_date:
+          $('edate').value,
+
         motorcycle_id:
           $('emoto').value
-            ? Number($('emoto').value)
+            ? Number(
+                $('emoto').value
+              )
             : null,
-        expense_type: $('etype').value,
-        amount: Number(
-          $('eamount').value
-        ),
+
+        category:
+          $('etype').value,
+
+        amount:
+          Number(
+            $('eamount').value
+          ),
+
         description:
           $('edesc').value
       })
@@ -1761,45 +3128,55 @@ async function addExpense(e) {
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
-async function decision(id, decisionValue) {
-  const note = prompt(
-    'Decision note:'
-  ) || '';
+async function decision(
+  id,
+  decisionValue
+) {
+  const note =
+    prompt(
+      'Decision note:'
+    ) || '';
 
   try {
     await api(
-      '/api/finance-changes/' +
-      id +
-      '/decision',
+      `/api/finance-changes/${id}/decision`,
       {
         method: 'POST',
+
         body: JSON.stringify({
-          decision: decisionValue,
-          decision_note: note
+          decision:
+            decisionValue,
+
+          decision_reason:
+            note,
+
+          decision_note:
+            note
         })
       }
     );
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
-/* =========================
+/* =========================================================
    FLEET
-========================= */
+========================================================= */
 
 function fleet() {
-  const d = state.data;
+  const d =
+    state.data;
 
-  const fleetSummary =
+  const summary =
     state.fleet || {};
 
   const total =
@@ -1807,62 +3184,93 @@ function fleet() {
 
   const active =
     d.motorcycles.filter(
-      m => m.status === 'Active'
+      m =>
+        String(
+          m.status || ''
+        ).toLowerCase() ===
+        'active'
     ).length;
 
   const maintenanceCount =
     d.motorcycles.filter(
       m =>
-        String(m.status || '')
-          .toLowerCase()
-          .includes('maintenance')
+        String(
+          m.status || ''
+        ).toLowerCase()
+          .includes(
+            'maintenance'
+          )
     ).length;
 
   const todayIncome =
     d.income
-      .filter(x => x.date === today())
+      .filter(
+        x =>
+          safeDate(
+            x.income_date ||
+            x.date
+          ) === today()
+      )
       .reduce(
-        (a, x) =>
-          a + Number(x.amount || 0),
+        (sum, x) =>
+          sum +
+          Number(
+            x.amount || 0
+          ),
         0
       );
 
   const todayExpenses =
     d.expenses
-      .filter(x => x.date === today())
+      .filter(
+        x =>
+          safeDate(
+            x.expense_date ||
+            x.date
+          ) === today()
+      )
       .reduce(
-        (a, x) =>
-          a + Number(x.amount || 0),
+        (sum, x) =>
+          sum +
+          Number(
+            x.amount || 0
+          ),
         0
       );
 
-  const todayNet =
-    todayIncome - todayExpenses;
-
   const fleetIncome =
     Number(
-      fleetSummary.income ??
+      summary.income ??
       d.income.reduce(
-        (a, x) =>
-          a + Number(x.amount || 0),
+        (sum, x) =>
+          sum +
+          Number(
+            x.amount || 0
+          ),
         0
       )
     );
 
   const fleetExpenses =
     Number(
-      fleetSummary.expenses ??
+      summary.expenses ??
       d.expenses.reduce(
-        (a, x) =>
-          a + Number(x.amount || 0),
+        (sum, x) =>
+          sum +
+          Number(
+            x.amount || 0
+          ),
         0
       )
     );
 
   const fleetNet =
     Number(
-      fleetSummary.net ??
-      (fleetIncome - fleetExpenses)
+      summary.net ??
+      (
+        fleetIncome -
+        fleetExpenses
+      )
     );
 
   shell(
@@ -1897,7 +3305,10 @@ function fleet() {
 
         ${card(
           "Today's Net",
-          money(todayNet)
+          money(
+            todayIncome -
+            todayExpenses
+          )
         )}
 
         ${card(
@@ -1952,8 +3363,11 @@ function fleet() {
 
             </div>
 
-            <button class="btn">
-              Register
+            <button
+              class="btn"
+              type="submit"
+            >
+              Register Motorcycle
             </button>
 
           </form>
@@ -1982,7 +3396,10 @@ function fleet() {
               placeholder="Closing notes"
             ></textarea>
 
-            <button class="btn">
+            <button
+              class="btn"
+              type="submit"
+            >
               Close Day
             </button>
 
@@ -2001,61 +3418,105 @@ function fleet() {
         <table class="table">
 
           <tr>
-            <th>Moto</th>
-            <th>Plate</th>
-            <th>Model</th>
-            <th>Status</th>
-            <th>Actions</th>
+
+            <th>
+              Motorcycle
+            </th>
+
+            <th>
+              Plate
+            </th>
+
+            <th>
+              Model
+            </th>
+
+            <th>
+              Status
+            </th>
+
+            <th>
+              Actions
+            </th>
+
           </tr>
 
-          ${d.motorcycles.map(m => `
-            <tr>
+          ${
+            d.motorcycles.length
+              ? d.motorcycles.map(
+                  m => `
+                    <tr>
 
-              <td>
-                <b>
-                  ${esc(m.code)}
-                </b>
-              </td>
+                      <td>
+                        <b>
+                          ${esc(
+                            getMotoCode(m)
+                          )}
+                        </b>
+                      </td>
 
-              <td>
-                ${esc(m.plate || '-')}
-              </td>
+                      <td>
+                        ${esc(
+                          getMotoPlate(m)
+                        )}
+                      </td>
 
-              <td>
-                ${esc(m.model || '-')}
-              </td>
+                      <td>
+                        ${esc(
+                          getMotoModel(m)
+                        )}
+                      </td>
 
-              <td>
-                ${esc(m.status || '-')}
-              </td>
+                      <td>
+                        ${esc(
+                          getMotoStatus(m)
+                        )}
+                      </td>
 
-              <td>
+                      <td>
 
-                <button
-                  class="btn light"
-                  onclick="viewMoto(${m.id})"
-                >
-                  History
-                </button>
+                        <button
+                          class="btn light"
+                          onclick="viewMoto(
+                            ${m.id}
+                          )"
+                        >
+                          History
+                        </button>
 
-                ${
-                  state.me.department_id === 'D4' ||
-                  state.me.department_id === 'D1'
-                    ? `
-                      <button
-                        class="btn light"
-                        onclick="addIncome(${m.id})"
-                      >
-                        Income
-                      </button>
-                    `
-                    : ''
-                }
+                        ${
+                          ['D1', 'D4']
+                            .includes(
+                              myDepartmentCode()
+                            )
+                            ? `
+                              <button
+                                class="btn light"
+                                onclick="addIncome(
+                                  ${m.id}
+                                )"
+                              >
+                                Income
+                              </button>
+                            `
+                            : ''
+                        }
 
-              </td>
+                      </td>
 
-            </tr>
-          `).join('')}
+                    </tr>
+                  `
+                ).join('')
+              : `
+                <tr>
+                  <td colspan="5">
+                    <p class="muted">
+                      No motorcycles registered yet.
+                    </p>
+                  </td>
+                </tr>
+              `
+          }
 
         </table>
 
@@ -2074,13 +3535,24 @@ function fleet() {
 
           <div class="two">
 
-            <select id="om">
+            <select
+              id="om"
+              required
+            >
 
-              ${d.motorcycles.map(m => `
-                <option value="${m.id}">
-                  ${esc(m.code)}
-                </option>
-              `).join('')}
+              ${
+                d.motorcycles.map(
+                  m => `
+                    <option
+                      value="${m.id}"
+                    >
+                      ${esc(
+                        getMotoCode(m)
+                      )}
+                    </option>
+                  `
+                ).join('')
+              }
 
             </select>
 
@@ -2102,7 +3574,10 @@ function fleet() {
             required
           >
 
-          <button class="btn">
+          <button
+            class="btn"
+            type="submit"
+          >
             Save Mileage
           </button>
 
@@ -2123,13 +3598,22 @@ function fleet() {
             onsubmit="assignRider(event)"
           >
 
-            <select id="am">
+            <select
+              id="am"
+              required
+            >
 
-              ${d.motorcycles.map(m => `
-                <option value="${m.id}">
-                  ${esc(m.code)}
-                </option>
-              `).join('')}
+              ${d.motorcycles.map(
+                m => `
+                  <option
+                    value="${m.id}"
+                  >
+                    ${esc(
+                      getMotoCode(m)
+                    )}
+                  </option>
+                `
+              ).join('')}
 
             </select>
 
@@ -2140,9 +3624,15 @@ function fleet() {
             >
 
             <input
+              id="ap"
+              placeholder="Rider phone"
+            >
+
+            <input
               id="as"
               type="date"
               value="${today()}"
+              required
             >
 
             <input
@@ -2150,7 +3640,10 @@ function fleet() {
               placeholder="Notes"
             >
 
-            <button class="btn">
+            <button
+              class="btn"
+              type="submit"
+            >
               Assign
             </button>
 
@@ -2169,13 +3662,22 @@ function fleet() {
             onsubmit="addMaintenance(event)"
           >
 
-            <select id="mm">
+            <select
+              id="mm"
+              required
+            >
 
-              ${d.motorcycles.map(m => `
-                <option value="${m.id}">
-                  ${esc(m.code)}
-                </option>
-              `).join('')}
+              ${d.motorcycles.map(
+                m => `
+                  <option
+                    value="${m.id}"
+                  >
+                    ${esc(
+                      getMotoCode(m)
+                    )}
+                  </option>
+                `
+              ).join('')}
 
             </select>
 
@@ -2191,6 +3693,7 @@ function fleet() {
                 id="md"
                 type="date"
                 value="${today()}"
+                required
               >
 
               <input
@@ -2240,11 +3743,21 @@ function fleet() {
             </div>
 
             <select id="mstatus">
-              <option>Completed</option>
-              <option>In Progress</option>
+
+              <option>
+                Completed
+              </option>
+
+              <option>
+                In Progress
+              </option>
+
             </select>
 
-            <button class="btn">
+            <button
+              class="btn"
+              type="submit"
+            >
               Save Maintenance
             </button>
 
@@ -2263,62 +3776,96 @@ function fleet() {
         <table class="table">
 
           <tr>
-            <th>Date</th>
-            <th>Moto</th>
-            <th>Amount</th>
-            <th>Entered by</th>
-            <th>Verified</th>
+
+            <th>
+              Date
+            </th>
+
+            <th>
+              Moto
+            </th>
+
+            <th>
+              Amount
+            </th>
+
+            <th>
+              Entered by
+            </th>
+
+            <th>
+              Verified
+            </th>
+
           </tr>
 
           ${d.income
             .slice(0, 50)
-            .map(x => `
-              <tr>
+            .map(
+              x => `
+                <tr>
 
-                <td>
-                  ${esc(x.date)}
-                </td>
+                  <td>
+                    ${esc(
+                      x.date
+                    )}
+                  </td>
 
-                <td>
-                  ${esc(x.motorcycle_code || '-')}
-                </td>
+                  <td>
+                    ${esc(
+                      x.motorcycle_code ||
+                      '-'
+                    )}
+                  </td>
 
-                <td>
-                  ${money(x.amount)}
-                </td>
+                  <td>
+                    ${money(
+                      x.amount
+                    )}
+                  </td>
 
-                <td>
-                  ${esc(
-                    x.entered_by_name ||
-                    x.entered_name ||
-                    '-'
-                  )}
-                </td>
+                  <td>
+                    ${esc(
+                      x.entered_by_name ||
+                      '-'
+                    )}
+                  </td>
 
-                <td>
+                  <td>
 
-                  ${
-                    x.verified
-                      ? 'Verified'
-                      : (
-                          state.me.department_id === 'D3' ||
-                          state.me.department_id === 'D1'
-                        )
-                          ? `
-                            <button
-                              class="btn light"
-                              onclick="verifyIncome(${x.id})"
-                            >
-                              Verify
-                            </button>
-                          `
-                          : 'Pending'
-                  }
+                    ${
+                      x.verified
+                        ? `
+                          <span class="tag">
+                            Verified
+                          </span>
+                        `
+                        : (
+                            myDepartmentCode() ===
+                              'D1' ||
+                            myDepartmentCode() ===
+                              'D3'
+                          )
+                            ? `
+                              <button
+                                class="btn light"
+                                onclick="verifyIncome(
+                                  ${x.id}
+                                )"
+                              >
+                                Verify
+                              </button>
+                            `
+                            : `
+                              Pending
+                            `
+                    }
 
-                </td>
+                  </td>
 
-              </tr>
-            `)
+                </tr>
+              `
+            )
             .join('')}
 
         </table>
@@ -2328,41 +3875,55 @@ function fleet() {
   );
 }
 
-async function addMoto(e) {
-  e.preventDefault();
+/* =========================================================
+   FLEET ACTIONS
+========================================================= */
+
+async function addMoto(event) {
+  event.preventDefault();
 
   try {
     await api('/api/motorcycles', {
       method: 'POST',
+
       body: JSON.stringify({
-        code: $('mcode').value,
-        plate: $('mplate').value,
-        model: $('mmodel').value,
+        plate_number:
+          $('mplate').value,
+
+        model:
+          $('mmodel').value,
+
         purchase_price:
           Number(
             $('mprice').value || 0
           ),
+
         purchase_date:
-          $('mpdate').value,
-        status: 'Active'
+          $('mpdate').value ||
+          null,
+
+        status:
+          'Active',
+
+        notes:
+          $('mcode').value
       })
     });
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
 async function verifyIncome(id) {
   try {
     await api(
-      '/api/income/' +
-      id +
-      '/verify',
+      `/api/income/${id}/verify`,
       {
         method: 'POST',
+
         body: JSON.stringify({
           reason:
             'Finance verification'
@@ -2372,21 +3933,28 @@ async function verifyIncome(id) {
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
 async function addIncome(id) {
-  const amount = prompt(
-    'Daily income (RWF):'
-  );
+  const amount =
+    prompt(
+      'Daily income (RWF):'
+    );
 
-  if (amount === null) return;
+  if (amount === null) {
+    return;
+  }
 
-  const value = Number(amount);
+  const value =
+    Number(amount);
 
-  if (!Number.isFinite(value) || value <= 0) {
+  if (
+    !Number.isFinite(value) ||
+    value <= 0
+  ) {
     alert(
       'Please enter a valid income amount.'
     );
@@ -2401,34 +3969,54 @@ async function addIncome(id) {
   try {
     await api('/api/income', {
       method: 'POST',
+
       body: JSON.stringify({
-        date: today(),
-        motorcycle_id: id,
-        amount: value,
-        collection_note: note
+        motorcycle_id:
+          id,
+
+        amount:
+          value,
+
+        income_date:
+          today(),
+
+        source:
+          'Motorcycle Daily Collection',
+
+        description:
+          note
       })
     });
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
-async function assignRider(e) {
-  e.preventDefault();
+async function assignRider(event) {
+  event.preventDefault();
 
   try {
     await api('/api/assignments', {
       method: 'POST',
+
       body: JSON.stringify({
         motorcycle_id:
-          Number($('am').value),
+          Number(
+            $('am').value
+          ),
+
         rider_name:
           $('ar').value,
+
+        rider_phone:
+          $('ap').value,
+
         start_date:
           $('as').value,
+
         notes:
           $('an').value
       })
@@ -2436,75 +4024,82 @@ async function assignRider(e) {
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
-async function addOdometer(e) {
-  e.preventDefault();
+async function addOdometer(event) {
+  event.preventDefault();
 
   try {
     await api('/api/odometer', {
       method: 'POST',
+
       body: JSON.stringify({
         motorcycle_id:
-          Number($('om').value),
-        date:
-          $('odate').value,
-        mileage:
-          Number($('omile').value)
+          Number(
+            $('om').value
+          ),
+
+        reading:
+          Number(
+            $('omile').value
+          ),
+
+        reading_date:
+          $('odate').value
       })
     });
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
-async function addMaintenance(e) {
-  e.preventDefault();
+async function addMaintenance(event) {
+  event.preventDefault();
 
   try {
     await api('/api/maintenance', {
       method: 'POST',
+
       body: JSON.stringify({
         motorcycle_id:
-          Number($('mm').value),
+          Number(
+            $('mm').value
+          ),
 
-        issue:
-          $('mi').value,
-
-        date:
+        maintenance_date:
           $('md').value,
 
-        mileage:
-          $('mileage').value
-            ? Number(
-                $('mileage').value
-              )
-            : null,
-
-        parts:
-          $('mparts').value,
+        maintenance_type:
+          $('mi').value,
 
         cost:
           Number(
             $('mcost').value || 0
           ),
 
-        garage:
-          $('mgarage').value,
-
-        next_service:
-          $('mnext').value,
-
-        downtime:
-          Number(
-            $('mdown').value || 0
-          ),
+        description:
+          [
+            $('mi').value,
+            $('mparts').value,
+            $('mgarage').value,
+            $('mileage').value
+              ? `Mileage: ${$('mileage').value}`
+              : '',
+            $('mnext').value
+              ? `Next service: ${$('mnext').value}`
+              : '',
+            $('mdown').value
+              ? `Downtime: ${$('mdown').value} hours`
+              : ''
+          ]
+            .filter(Boolean)
+            .join(' | '),
 
         status:
           $('mstatus').value
@@ -2513,95 +4108,148 @@ async function addMaintenance(e) {
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
-async function closeDay(e) {
-  e.preventDefault();
+async function closeDay(event) {
+  event.preventDefault();
 
   try {
-    const r = await api(
-      '/api/daily-closing',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          date:
-            $('cdate').value,
-          notes:
-            $('cnotes').value
-        })
-      }
-    );
+    const result =
+      await api(
+        '/api/daily-closing',
+        {
+          method: 'POST',
 
-    const dc =
-      r.dailyClosing || {};
+          body: JSON.stringify({
+            closing_date:
+              $('cdate').value,
+
+            notes:
+              $('cnotes').value
+          })
+        }
+      );
+
+    const closing =
+      result.dailyClosing ||
+      result.closing ||
+      {};
 
     alert(
-      `Closed ${
-        dc.date ||
+      `Day closed: ${
+        closing.closing_date ||
+        closing.date ||
         $('cdate').value
-      }: ${money(
-        dc.net || 0
-      )}`
+      }\nNet: ${
+        money(
+          closing.net || 0
+        )
+      }`
     );
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
 async function viewMoto(id) {
-  try {
-    const r =
-      await api(
-        '/api/fleet-detail/' +
-        id
-      );
+  const moto =
+    state.data.motorcycles.find(
+      m =>
+        Number(m.id) ===
+        Number(id)
+    );
 
-    const text = [
-      `MOTORCYCLE ${
-        r.motorcycle.code
-      }`,
-
-      `Status: ${
-        r.motorcycle.status
-      }`,
-
-      `Income records: ${
-        (r.income || []).length
-      }`,
-
-      `Expense records: ${
-        (r.expenses || []).length
-      }`,
-
-      `Maintenance records: ${
-        (r.maintenance || []).length
-      }`,
-
-      `Odometer records: ${
-        (r.odometer || []).length
-      }`,
-
-      `Assignments: ${
-        (r.assignments || []).length
-      }`
-    ].join('\n');
-
-    alert(text);
-
-  } catch (x) {
-    alert(x.message);
+  if (!moto) {
+    return;
   }
+
+  const income =
+    state.data.income.filter(
+      x =>
+        Number(
+          x.motorcycle_id
+        ) === Number(id)
+    );
+
+  const expenses =
+    state.data.expenses.filter(
+      x =>
+        Number(
+          x.motorcycle_id
+        ) === Number(id)
+    );
+
+  const maintenance =
+    state.data.maintenance.filter(
+      x =>
+        Number(
+          x.motorcycle_id
+        ) === Number(id)
+    );
+
+  const odometer =
+    state.data.odometer.filter(
+      x =>
+        Number(
+          x.motorcycle_id
+        ) === Number(id)
+    );
+
+  const assignments =
+    state.data.assignments.filter(
+      x =>
+        Number(
+          x.motorcycle_id
+        ) === Number(id)
+    );
+
+  const incomeTotal =
+    income.reduce(
+      (sum, x) =>
+        sum +
+        Number(
+          x.amount || 0
+        ),
+      0
+    );
+
+  const expenseTotal =
+    expenses.reduce(
+      (sum, x) =>
+        sum +
+        Number(
+          x.amount || 0
+        ),
+      0
+    );
+
+  alert(
+    [
+      `MOTORCYCLE: ${getMotoCode(moto)}`,
+      `Plate: ${getMotoPlate(moto)}`,
+      `Model: ${getMotoModel(moto)}`,
+      `Status: ${getMotoStatus(moto)}`,
+      '',
+      `Income records: ${income.length}`,
+      `Income total: ${money(incomeTotal)}`,
+      `Expense records: ${expenses.length}`,
+      `Expense total: ${money(expenseTotal)}`,
+      `Maintenance records: ${maintenance.length}`,
+      `Odometer records: ${odometer.length}`,
+      `Assignments: ${assignments.length}`
+    ].join('\n')
+  );
 }
 
-/* =========================
+/* =========================================================
    EVIDENCE
-========================= */
+========================================================= */
 
 function evidence() {
   shell(
@@ -2630,15 +4278,24 @@ function evidence() {
               No task link
             </option>
 
-            ${state.data.tasks.map(t => `
-              <option value="${t.id}">
-                ${esc(t.name)}
-              </option>
-            `).join('')}
+            ${state.data.tasks.map(
+              t => `
+                <option
+                  value="${t.id}"
+                >
+                  ${esc(
+                    getTaskTitle(t)
+                  )}
+                </option>
+              `
+            ).join('')}
 
           </select>
 
-          <button class="btn">
+          <button
+            class="btn"
+            type="submit"
+          >
             Upload
           </button>
 
@@ -2648,108 +4305,117 @@ function evidence() {
 
       <div class="section grid">
 
-        ${state.evidence.map(e => `
-          <div class="card">
+        ${
+          state.data.evidence.length
+            ? state.data.evidence.map(
+                item => `
+                  <div class="card">
 
-            <b>
-              ${esc(e.original_name)}
-            </b>
+                    <b>
+                      ${esc(
+                        item.filename ||
+                        item.original_name ||
+                        'Evidence'
+                      )}
+                    </b>
 
-            <p>
-              ${esc(
-                e.uploaded_name ||
-                e.filename ||
-                ''
-              )}
-              ·
-              ${esc(
-                e.uploaded_at || ''
-              )}
-            </p>
+                    <p>
+                      ${esc(
+                        item.created_at ||
+                        item.uploaded_at ||
+                        ''
+                      )}
+                    </p>
 
-            <a
-              class="btn light"
-              href="${
-                e.url ||
-                (
-                  '/api/evidence/' +
-                  e.id +
-                  '/file'
-                )
-              }"
-              target="_blank"
-              rel="noopener"
-            >
-              Open
-            </a>
+                    <a
+                      class="btn light"
+                      href="/api/evidence/${
+                        item.id
+                      }/file"
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      Open Evidence
+                    </a>
 
-          </div>
-        `).join('')}
+                  </div>
+                `
+              ).join('')
+            : `
+              <div class="card">
+                <p class="muted">
+                  No evidence uploaded yet.
+                </p>
+              </div>
+            `
+        }
 
       </div>
     `
   );
 }
 
-async function uploadEvidence(e) {
-  e.preventDefault();
+async function uploadEvidence(event) {
+  event.preventDefault();
 
   const file =
-    $('efile').files[0];
+    $('efile')?.files?.[0];
 
   if (!file) {
-    alert('Please select a file.');
+    alert(
+      'Please select a file.'
+    );
     return;
   }
 
-  const fd =
+  const form =
     new FormData();
 
-  fd.append(
+  form.append(
     'file',
     file
   );
 
   if ($('etask').value) {
-    fd.append(
+    form.append(
       'task_id',
       $('etask').value
     );
   }
 
   try {
-
-    const r =
+    const response =
       await fetch(
         '/api/evidence',
         {
           method: 'POST',
-          body: fd,
-          credentials: 'include'
+          credentials: 'include',
+          body: form
         }
       );
 
-    const j =
-      await r.json()
+    const result =
+      await response
+        .json()
         .catch(() => ({}));
 
-    if (!r.ok) {
-      throw Error(
-        j.error ||
-        'Evidence upload failed'
+    if (!response.ok) {
+      throw new Error(
+        result.error ||
+        'Evidence upload failed.'
       );
     }
 
     await refresh();
 
-  } catch (x) {
-    alert(x.message);
+  } catch (error) {
+    alert(error.message);
   }
 }
 
-/* =========================
+/* =========================================================
    AUDIT
-========================= */
+========================================================= */
 
 function audit() {
   shell(
@@ -2757,9 +4423,13 @@ function audit() {
     `
       <div class="card">
 
+        <h2>
+          System Audit Trail
+        </h2>
+
         <input
           id="aq"
-          placeholder="Search all audit information..."
+          placeholder="Search audit information..."
           oninput="filterAudit()"
         >
 
@@ -2780,97 +4450,149 @@ function filterAudit() {
   const box =
     $('auditbox');
 
-  if (!box) return;
+  if (!box) {
+    return;
+  }
 
-  const q =
+  const query =
     (
       $('aq')?.value ||
       ''
-    ).toLowerCase();
+    )
+      .toLowerCase()
+      .trim();
 
-  const a =
+  const records =
     state.data.audit.filter(
-      x =>
-        JSON.stringify(x)
+      item =>
+        JSON.stringify(item)
           .toLowerCase()
-          .includes(q)
+          .includes(query)
     );
 
   box.innerHTML = `
     <table class="table">
 
       <tr>
-        <th>Date/Time</th>
-        <th>Action</th>
-        <th>Record</th>
-        <th>ID</th>
-        <th>Who</th>
-        <th>Reason</th>
+
+        <th>
+          Date/Time
+        </th>
+
+        <th>
+          Action
+        </th>
+
+        <th>
+          Record
+        </th>
+
+        <th>
+          ID
+        </th>
+
+        <th>
+          Who
+        </th>
+
+        <th>
+          Details
+        </th>
+
       </tr>
 
-      ${a.map(x => `
-        <tr>
+      ${
+        records.length
+          ? records.map(
+              item => `
+                <tr>
 
-          <td>
-            ${esc(
-              x.when_at || ''
-            )}
-          </td>
+                  <td>
+                    ${esc(
+                      item.created_at ||
+                      item.when_at ||
+                      ''
+                    )}
+                  </td>
 
-          <td>
-            ${esc(
-              x.action || ''
-            )}
-          </td>
+                  <td>
+                    ${esc(
+                      item.action ||
+                      ''
+                    )}
+                  </td>
 
-          <td>
-            ${esc(
-              x.record_type || ''
-            )}
-          </td>
+                  <td>
+                    ${esc(
+                      item.entity_type ||
+                      item.record_type ||
+                      ''
+                    )}
+                  </td>
 
-          <td>
-            ${x.record_id || '-'}
-          </td>
+                  <td>
+                    ${
+                      item.entity_id ||
+                      item.record_id ||
+                      '-'
+                    }
+                  </td>
 
-          <td>
-            ${esc(
-              x.user_name || '-'
-            )}
-          </td>
+                  <td>
+                    ${esc(
+                      item.user_name ||
+                      getUserNameById(
+                        item.user_id
+                      ) ||
+                      '-'
+                    )}
+                  </td>
 
-          <td>
-            ${esc(
-              x.reason || ''
-            )}
-          </td>
+                  <td>
+                    ${esc(
+                      item.details ||
+                      item.reason ||
+                      ''
+                    )}
+                  </td>
 
-        </tr>
-      `).join('')}
+                </tr>
+              `
+            ).join('')
+          : `
+            <tr>
+              <td colspan="6">
+                <p class="muted">
+                  No audit records found.
+                </p>
+              </td>
+            </tr>
+          `
+      }
 
     </table>
   `;
 }
 
-/* =========================
+/* =========================================================
    REFRESH
-========================= */
+========================================================= */
 
 async function refresh() {
   try {
     await load();
     render();
-  } catch (x) {
+  } catch (error) {
     alert(
-      x.message ||
+      error.message ||
       'Could not refresh data.'
     );
   }
 }
 
-/* =========================
+/* =========================================================
    RENDER
-========================= */
+========================================================= */
 
 function render() {
   if (!state.me) {
@@ -2879,7 +4601,8 @@ function render() {
   }
 
   if (!can(state.page)) {
-    state.page = 'dashboard';
+    state.page =
+      'dashboard';
   }
 
   const pages = {
@@ -2896,17 +4619,17 @@ function render() {
     audit
   };
 
-  const page =
+  const selected =
     pages[state.page] ||
     dashboard;
 
-  page();
+  selected();
 }
 
-/* =========================
-   START APPLICATION
-========================= */
+/* =========================================================
+   START
+========================================================= */
 
-(async () => {
+(async function start() {
   await boot();
 })();
