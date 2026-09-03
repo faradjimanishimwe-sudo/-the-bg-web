@@ -1,54 +1,53 @@
 /* =========================================================
-   THE BG WEB
-   Premium Corporate Digital Workplace UI
+   THE BG WEB — PREMIUM CORPORATE UI
+   Design only — does not change application logic
    ========================================================= */
 
 :root {
-  --bg: #f4f6f9;
-  --bg-soft: #f8fafc;
-
+  --bg: #f3f6fa;
   --surface: #ffffff;
   --surface-soft: #f8fafc;
 
-  --sidebar: #0b1220;
-  --sidebar-2: #111b2e;
-  --sidebar-border: rgba(255,255,255,.08);
-
   --ink: #101828;
-  --ink-soft: #344054;
+  --ink-2: #1d2939;
   --muted: #667085;
   --muted-2: #98a2b3;
 
   --line: #e4e7ec;
-  --line-soft: #eef1f5;
+  --line-soft: #eef2f6;
 
-  --accent: #111827;
-  --accent-2: #1d2939;
+  --navy: #0b1220;
+  --navy-2: #111c31;
+  --navy-3: #18243a;
 
-  --white: #ffffff;
+  --blue: #2563eb;
+  --blue-soft: #eff6ff;
 
-  --success: #067647;
-  --success-bg: #ecfdf3;
+  --green: #079455;
+  --green-soft: #ecfdf3;
 
-  --warning: #b54708;
-  --warning-bg: #fffaeb;
+  --amber: #d97706;
+  --amber-soft: #fffaeb;
 
-  --danger: #b42318;
-  --danger-bg: #fef3f2;
+  --red: #d92d20;
+  --red-soft: #fef3f2;
 
-  --info: #175cd3;
-  --info-bg: #eff8ff;
+  --purple: #7c3aed;
+  --purple-soft: #f5f3ff;
 
-  --shadow-xs: 0 1px 2px rgba(16,24,40,.04);
-  --shadow-sm: 0 2px 8px rgba(16,24,40,.06);
-  --shadow-md: 0 8px 24px rgba(16,24,40,.08);
-  --shadow-lg: 0 18px 50px rgba(16,24,40,.12);
+  --cyan: #0891b2;
+  --cyan-soft: #ecfeff;
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
-  --radius-2xl: 24px;
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, .04);
+  --shadow-sm: 0 3px 10px rgba(16, 24, 40, .06);
+  --shadow-md: 0 10px 28px rgba(16, 24, 40, .08);
+  --shadow-lg: 0 20px 55px rgba(16, 24, 40, .12);
+
+  --r-sm: 9px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-2xl: 26px;
 
   font-family:
     Inter,
@@ -70,7 +69,6 @@
   -webkit-font-smoothing: antialiased;
 }
 
-
 /* =========================================================
    RESET
    ========================================================= */
@@ -82,8 +80,6 @@
 }
 
 html {
-  margin: 0;
-  padding: 0;
   min-height: 100%;
   background: var(--bg);
   scroll-behavior: smooth;
@@ -91,13 +87,12 @@ html {
 
 body {
   margin: 0;
-  padding: 0;
   min-height: 100vh;
   background:
     radial-gradient(
-      circle at top right,
-      rgba(255,255,255,.9),
-      transparent 30%
+      circle at 100% 0%,
+      rgba(37, 99, 235, .035),
+      transparent 28%
     ),
     var(--bg);
   color: var(--ink);
@@ -142,57 +137,55 @@ a {
   background:
     radial-gradient(
       circle at 15% 15%,
-      rgba(255,255,255,.10),
-      transparent 25%
+      rgba(37, 99, 235, .16),
+      transparent 28%
     ),
     radial-gradient(
       circle at 85% 80%,
-      rgba(255,255,255,.07),
+      rgba(124, 58, 237, .12),
       transparent 25%
     ),
     linear-gradient(
       135deg,
       #070d18 0%,
-      #0b1220 45%,
-      #162033 100%
+      #0b1220 48%,
+      #17233a 100%
     );
 }
 
-.login::before {
-  content: "";
-  position: absolute;
-
-  width: 520px;
-  height: 520px;
-
-  border-radius: 50%;
-
-  border: 1px solid rgba(255,255,255,.06);
-
-  top: -260px;
-  right: -180px;
-}
-
+.login::before,
 .login::after {
   content: "";
   position: absolute;
 
-  width: 420px;
-  height: 420px;
-
   border-radius: 50%;
 
-  border: 1px solid rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.055);
 
-  bottom: -250px;
-  left: -170px;
+  pointer-events: none;
+}
+
+.login::before {
+  width: 560px;
+  height: 560px;
+
+  top: -310px;
+  right: -190px;
+}
+
+.login::after {
+  width: 440px;
+  height: 440px;
+
+  bottom: -280px;
+  left: -190px;
 }
 
 .loginbox {
+  width: min(440px, 100%);
+
   position: relative;
   z-index: 2;
-
-  width: min(440px, 100%);
 
   padding: 38px;
 
@@ -205,19 +198,19 @@ a {
 
   border: 1px solid rgba(255,255,255,.55);
 
-  border-radius: var(--radius-2xl);
+  border-radius: var(--r-2xl);
 
   box-shadow:
-    0 30px 90px rgba(0,0,0,.28),
-    0 2px 8px rgba(0,0,0,.08);
+    0 35px 100px rgba(0,0,0,.30),
+    0 4px 15px rgba(0,0,0,.08);
 
-  animation: loginIn .45s ease both;
+  animation: loginAppear .45s ease both;
 }
 
-@keyframes loginIn {
+@keyframes loginAppear {
   from {
     opacity: 0;
-    transform: translateY(12px) scale(.985);
+    transform: translateY(14px) scale(.985);
   }
 
   to {
@@ -226,33 +219,20 @@ a {
   }
 }
 
-.loginbox .brand {
-  color: var(--ink);
-}
-
-.loginbox .sub {
-  margin-bottom: 28px;
-}
-
-.loginbox form {
-  display: grid;
-  gap: 14px;
-}
-
 
 /* =========================================================
    BRAND
    ========================================================= */
 
 .brand {
-  font-size: 28px;
+  font-size: 29px;
   line-height: 1;
 
   font-weight: 950;
 
-  letter-spacing: .16em;
+  letter-spacing: .15em;
 
-  color: var(--white);
+  color: var(--ink);
 
   text-transform: uppercase;
 }
@@ -260,7 +240,7 @@ a {
 .sub,
 .eyebrow {
   font-size: 10px;
-  line-height: 1.4;
+  line-height: 1.45;
 
   font-weight: 850;
 
@@ -271,13 +251,17 @@ a {
   color: var(--muted);
 }
 
+.sidebar .brand {
+  color: #ffffff;
+}
+
 .sidebar .sub {
-  color: var(--muted-2);
+  color: #98a2b3;
 }
 
 
 /* =========================================================
-   MAIN APPLICATION LAYOUT
+   APPLICATION LAYOUT
    ========================================================= */
 
 .layout {
@@ -307,27 +291,27 @@ a {
   display: flex;
   flex-direction: column;
 
-  padding: 24px 16px;
+  padding: 25px 15px;
 
-  color: var(--white);
+  color: #ffffff;
 
   background:
     linear-gradient(
       180deg,
-      #0a1120 0%,
+      #09111f 0%,
       #0d1729 55%,
-      #0a1220 100%
+      #09111f 100%
     );
 
-  border-right: 1px solid rgba(255,255,255,.05);
+  border-right: 1px solid rgba(255,255,255,.055);
 
   box-shadow:
-    8px 0 30px rgba(16,24,40,.04);
+    10px 0 30px rgba(16,24,40,.045);
 
   overflow-y: auto;
 
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,.15) transparent;
+  scrollbar-color: rgba(255,255,255,.14) transparent;
 }
 
 .sidebar::-webkit-scrollbar {
@@ -336,46 +320,54 @@ a {
 
 .sidebar::-webkit-scrollbar-thumb {
   background: rgba(255,255,255,.14);
-  border-radius: 20px;
+  border-radius: 99px;
 }
 
 
 /* =========================================================
-   SIDEBAR USER CARD
+   USER PROFILE
    ========================================================= */
 
 .user {
-  margin: 26px 4px 22px;
+  margin: 27px 4px 23px;
 
-  padding: 15px;
+  padding: 16px;
 
   display: grid;
+
   gap: 5px;
 
-  background: rgba(255,255,255,.035);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255,255,255,.065),
+      rgba(255,255,255,.025)
+    );
 
-  border:
-    1px solid
-    var(--sidebar-border);
+  border: 1px solid rgba(255,255,255,.08);
 
-  border-radius: var(--radius-md);
+  border-radius: var(--r-md);
 
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.025);
+    inset 0 1px 0 rgba(255,255,255,.03);
 }
 
 .user strong {
+  color: #ffffff;
+
   font-size: 13px;
+
   line-height: 1.35;
 
-  color: #f8fafc;
+  font-weight: 800;
 }
 
 .user span {
   color: #98a2b3;
 
   font-size: 11px;
-  line-height: 1.4;
+
+  line-height: 1.45;
 }
 
 
@@ -385,20 +377,25 @@ a {
 
 .nav {
   display: grid;
+
   gap: 5px;
 
-  margin-top: 4px;
+  margin-top: 3px;
 }
 
 .nav button {
   width: 100%;
 
+  min-height: 44px;
+
   display: flex;
   align-items: center;
 
-  min-height: 43px;
+  padding: 10px 12px;
 
   border: 1px solid transparent;
+
+  border-radius: 11px;
 
   background: transparent;
 
@@ -406,11 +403,8 @@ a {
 
   text-align: left;
 
-  padding: 10px 12px;
-
-  border-radius: 10px;
-
   font-size: 13px;
+
   font-weight: 650;
 
   cursor: pointer;
@@ -423,8 +417,10 @@ a {
 }
 
 .nav button:hover {
-  background: rgba(255,255,255,.06);
   color: #ffffff;
+
+  background:
+    rgba(255,255,255,.055);
 }
 
 .nav button:active {
@@ -432,24 +428,26 @@ a {
 }
 
 .nav button.active {
+  color: #ffffff;
+
   background:
     linear-gradient(
       135deg,
-      rgba(255,255,255,.13),
-      rgba(255,255,255,.065)
+      rgba(37,99,235,.28),
+      rgba(37,99,235,.10)
     );
 
-  color: #ffffff;
-
-  border-color: rgba(255,255,255,.09);
+  border-color:
+    rgba(96,165,250,.16);
 
   box-shadow:
-    inset 3px 0 0 rgba(255,255,255,.75);
+    inset 3px 0 0 #60a5fa,
+    0 4px 14px rgba(0,0,0,.10);
 }
 
 
 /* =========================================================
-   MAIN CONTENT
+   MAIN
    ========================================================= */
 
 .main {
@@ -461,16 +459,16 @@ a {
 
   background:
     radial-gradient(
-      circle at top right,
-      rgba(255,255,255,.95),
-      transparent 30%
+      circle at 95% 0%,
+      rgba(37,99,235,.035),
+      transparent 27%
     ),
     var(--bg);
 }
 
 
 /* =========================================================
-   TOP HEADER
+   TOP BAR
    ========================================================= */
 
 .top {
@@ -489,22 +487,18 @@ a {
 
   color: var(--ink);
 
-  font-size: clamp(23px, 2.5vw, 30px);
+  font-size: clamp(24px, 2.6vw, 31px);
 
-  line-height: 1.2;
+  line-height: 1.18;
 
-  letter-spacing: -.025em;
+  letter-spacing: -.03em;
 
   font-weight: 850;
 }
 
-.top .eyebrow {
-  color: var(--muted);
-}
-
 
 /* =========================================================
-   BADGES / TAGS / PILLS
+   BADGES / PILLS
    ========================================================= */
 
 .badge,
@@ -519,17 +513,15 @@ a {
 
   min-height: 28px;
 
-  border:
-    1px solid
-    var(--line);
+  padding: 5px 10px;
 
-  background: var(--surface);
-
-  color: var(--ink-soft);
+  border: 1px solid var(--line);
 
   border-radius: 999px;
 
-  padding: 5px 10px;
+  background: var(--surface);
+
+  color: var(--ink-2);
 
   font-size: 11px;
 
@@ -540,13 +532,9 @@ a {
   box-shadow: var(--shadow-xs);
 }
 
-.badge {
-  background: #f8fafc;
-}
-
 
 /* =========================================================
-   GRID SYSTEM
+   DASHBOARD GRID
    ========================================================= */
 
 .grid {
@@ -575,28 +563,63 @@ a {
 .card {
   position: relative;
 
-  background: var(--surface);
+  overflow: hidden;
 
-  border:
-    1px solid
-    var(--line);
+  background:
+    linear-gradient(
+      180deg,
+      #ffffff,
+      #fbfcfe
+    );
 
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+
+  border-radius: var(--r-lg);
 
   padding: 19px;
 
   box-shadow: var(--shadow-sm);
 
   transition:
-    transform .18s ease,
-    box-shadow .18s ease,
-    border-color .18s ease;
+    transform .2s ease,
+    box-shadow .2s ease,
+    border-color .2s ease;
+}
+
+.card::after {
+  content: "";
+
+  position: absolute;
+
+  top: 0;
+  left: 0;
+  right: 0;
+
+  height: 2px;
+
+  background:
+    linear-gradient(
+      90deg,
+      rgba(37,99,235,0),
+      rgba(37,99,235,.35),
+      rgba(37,99,235,0)
+    );
+
+  opacity: 0;
+
+  transition: opacity .2s ease;
 }
 
 .card:hover {
+  transform: translateY(-2px);
+
   border-color: #d9dee7;
 
   box-shadow: var(--shadow-md);
+}
+
+.card:hover::after {
+  opacity: 1;
 }
 
 .card h2 {
@@ -609,27 +632,36 @@ a {
   line-height: 1.35;
 
   letter-spacing: -.015em;
+
+  font-weight: 800;
 }
 
 .card h3 {
   margin: 0;
 
+  color: var(--ink);
+
   font-size: 14px;
+
+  font-weight: 800;
 }
 
 .card p {
   color: var(--muted);
+
+  line-height: 1.55;
 }
 
 
 /* =========================================================
-   STAT CARDS
+   STAT / KPI CARDS
    ========================================================= */
 
 .stat {
-  min-height: 122px;
+  min-height: 125px;
 
   display: flex;
+
   flex-direction: column;
 
   justify-content: space-between;
@@ -650,13 +682,39 @@ a {
 
   color: var(--ink);
 
-  font-size: clamp(24px, 3vw, 31px);
+  font-size: clamp(25px, 3vw, 32px);
 
   line-height: 1;
 
-  letter-spacing: -.035em;
+  letter-spacing: -.04em;
 
-  font-weight: 850;
+  font-weight: 900;
+}
+
+
+/* =========================================================
+   ACCENT VARIATIONS
+   These work automatically where app.js uses common classes.
+   ========================================================= */
+
+.card.success,
+.stat.success {
+  border-color: rgba(7,148,85,.16);
+}
+
+.card.warning,
+.stat.warning {
+  border-color: rgba(217,119,6,.18);
+}
+
+.card.danger,
+.stat.danger {
+  border-color: rgba(217,45,32,.16);
+}
+
+.card.info,
+.stat.info {
+  border-color: rgba(37,99,235,.16);
 }
 
 
@@ -701,9 +759,7 @@ textarea {
 
   padding: 10px 12px;
 
-  border:
-    1px solid
-    #d0d5dd;
+  border: 1px solid #d0d5dd;
 
   border-radius: 10px;
 
@@ -741,12 +797,12 @@ textarea:hover {
 input:focus,
 select:focus,
 textarea:focus {
-  border-color: #667085;
+  border-color: #5b6b82;
 
   box-shadow:
-    0 0 0 3px rgba(16,24,40,.07);
+    0 0 0 3px rgba(37,99,235,.08);
 
-  background: #fff;
+  background: #ffffff;
 }
 
 
@@ -757,6 +813,8 @@ textarea:focus {
 .btn {
   min-height: 42px;
 
+  padding: 10px 15px;
+
   border: 1px solid transparent;
 
   border-radius: 10px;
@@ -765,12 +823,10 @@ textarea:focus {
     linear-gradient(
       180deg,
       #182230,
-      #101828
+      #0f1724
     );
 
   color: #ffffff;
-
-  padding: 10px 15px;
 
   font-size: 12px;
 
@@ -779,7 +835,7 @@ textarea:focus {
   cursor: pointer;
 
   box-shadow:
-    0 1px 2px rgba(16,24,40,.12);
+    0 2px 4px rgba(16,24,40,.12);
 
   transition:
     transform .16s ease,
@@ -788,10 +844,10 @@ textarea:focus {
 }
 
 .btn:hover {
-  box-shadow:
-    0 5px 14px rgba(16,24,40,.15);
-
   transform: translateY(-1px);
+
+  box-shadow:
+    0 7px 18px rgba(16,24,40,.15);
 }
 
 .btn:active {
@@ -816,17 +872,15 @@ textarea:focus {
   background:
     linear-gradient(
       180deg,
-      #d92d20,
+      #ef4444,
       #b42318
     );
-
-  color: #ffffff;
 }
 
 .btn:disabled {
-  cursor: not-allowed;
-
   opacity: .55;
+
+  cursor: not-allowed;
 
   transform: none;
 
@@ -864,9 +918,7 @@ textarea:focus {
 
   padding: 11px 0;
 
-  border-bottom:
-    1px solid
-    var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .row:last-child {
@@ -889,7 +941,7 @@ textarea:focus {
 
   overflow-x: auto;
 
-  border-radius: 12px;
+  border-radius: 13px;
 
   -webkit-overflow-scrolling: touch;
 }
@@ -910,9 +962,7 @@ textarea:focus {
 .table td {
   padding: 13px 12px;
 
-  border-bottom:
-    1px solid
-    var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
 
   text-align: left;
 
@@ -935,16 +985,8 @@ textarea:focus {
   white-space: nowrap;
 }
 
-.table th:first-child {
-  border-top-left-radius: 10px;
-}
-
-.table th:last-child {
-  border-top-right-radius: 10px;
-}
-
 .table td {
-  color: var(--ink-soft);
+  color: var(--ink-2);
 
   font-size: 12px;
 }
@@ -954,7 +996,7 @@ textarea:focus {
 }
 
 .table tbody tr:hover {
-  background: #fafbfc;
+  background: #f8fafc;
 }
 
 .table tbody tr:last-child td {
@@ -971,24 +1013,6 @@ textarea:focus {
 
 
 /* =========================================================
-   TEXT HELPERS
-   ========================================================= */
-
-.muted,
-small {
-  color: var(--muted);
-}
-
-.muted {
-  font-size: 12px;
-}
-
-h2 {
-  margin-top: 0;
-}
-
-
-/* =========================================================
    ALERTS
    ========================================================= */
 
@@ -997,15 +1021,13 @@ h2 {
 
   margin: 8px 0;
 
-  border:
-    1px solid
-    var(--line);
+  border: 1px solid var(--line);
 
-  border-radius: 10px;
+  border-radius: 11px;
 
   background: #f8fafc;
 
-  color: var(--ink-soft);
+  color: var(--ink-2);
 
   font-size: 12px;
 
@@ -1013,40 +1035,40 @@ h2 {
 }
 
 .alert.danger {
-  background: var(--danger-bg);
+  background: var(--red-soft);
 
   border-color: #fecdca;
 
-  color: var(--danger);
+  color: var(--red);
 }
 
 .alert.warning {
-  background: var(--warning-bg);
+  background: var(--amber-soft);
 
   border-color: #fedf89;
 
-  color: var(--warning);
+  color: var(--amber);
 }
 
 
 /* =========================================================
-   SUCCESS / INFO HELPERS
+   STATUS HELPERS
    ========================================================= */
 
 .success {
-  color: var(--success);
+  color: var(--green);
 }
 
 .warning {
-  color: var(--warning);
+  color: var(--amber);
 }
 
 .danger {
-  color: var(--danger);
+  color: var(--red);
 }
 
 .info {
-  color: var(--info);
+  color: var(--blue);
 }
 
 
@@ -1071,15 +1093,15 @@ h2 {
 .progress i {
   display: block;
 
-  height: 100%;
-
   width: 0;
+
+  height: 100%;
 
   background:
     linear-gradient(
       90deg,
-      #111827,
-      #344054
+      #2563eb,
+      #4f46e5
     );
 
   border-radius: inherit;
@@ -1089,15 +1111,13 @@ h2 {
 
 
 /* =========================================================
-   CHANGES / ACTIVITY
+   ACTIVITY / CHANGES
    ========================================================= */
 
 .change {
   padding: 14px 0;
 
-  border-bottom:
-    1px solid
-    var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .change:last-child {
@@ -1106,7 +1126,7 @@ h2 {
 
 
 /* =========================================================
-   MOBILE NAVIGATION
+   MOBILE NAV
    ========================================================= */
 
 .mobile {
@@ -1115,36 +1135,7 @@ h2 {
 
 
 /* =========================================================
-   SCROLLBARS
-   ========================================================= */
-
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
-}
-
-*::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
-}
-
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-*::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-
-  border-radius: 20px;
-}
-
-*::-webkit-scrollbar-thumb:hover {
-  background: #98a2b3;
-}
-
-
-/* =========================================================
-   TABLET
+   RESPONSIVE — LARGE TABLET
    ========================================================= */
 
 @media (max-width: 1180px) {
@@ -1166,7 +1157,7 @@ h2 {
 
 
 /* =========================================================
-   SMALL TABLET
+   RESPONSIVE — TABLET
    ========================================================= */
 
 @media (max-width: 900px) {
@@ -1187,7 +1178,7 @@ h2 {
 
 
 /* =========================================================
-   MOBILE
+   RESPONSIVE — MOBILE
    ========================================================= */
 
 @media (max-width: 700px) {
@@ -1199,7 +1190,7 @@ h2 {
   body {
     overflow-x: hidden;
 
-    padding-bottom: 74px;
+    padding-bottom: 76px;
   }
 
   .layout {
@@ -1216,14 +1207,14 @@ h2 {
   .main {
     width: 100%;
 
+    min-height: 100vh;
+    min-height: 100dvh;
+
     padding:
       max(18px, env(safe-area-inset-top))
       14px
       92px
       14px;
-
-    min-height: 100vh;
-    min-height: 100dvh;
   }
 
   .top {
@@ -1236,8 +1227,6 @@ h2 {
 
   .top h1 {
     font-size: 22px;
-
-    line-height: 1.2;
   }
 
   .top .badge {
@@ -1262,36 +1251,34 @@ h2 {
     border-radius: 15px;
   }
 
+  .card:hover {
+    transform: none;
+  }
+
   .stat {
-    min-height: 108px;
+    min-height: 110px;
   }
 
   .stat strong {
-    font-size: 25px;
+    font-size: 26px;
   }
 
   .section {
     margin-top: 14px;
   }
 
-  .form {
-    gap: 11px;
-  }
-
   input,
   select,
   textarea {
-    min-height: 45px;
+    min-height: 46px;
 
     font-size: 14px;
   }
 
   .btn {
-    min-height: 43px;
+    min-height: 44px;
 
     padding: 10px 13px;
-
-    font-size: 12px;
   }
 
   .actions {
@@ -1336,25 +1323,25 @@ h2 {
     background:
       rgba(255,255,255,.96);
 
-    border-top:
-      1px solid
-      var(--line);
+    border-top: 1px solid var(--line);
 
     box-shadow:
-      0 -8px 25px rgba(16,24,40,.08);
+      0 -10px 28px rgba(16,24,40,.09);
 
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
   }
 
   .mobile button {
     min-width: 0;
 
-    min-height: 48px;
+    min-height: 49px;
+
+    padding: 6px 2px;
 
     border: 0;
 
-    border-radius: 10px;
+    border-radius: 11px;
 
     background: transparent;
 
@@ -1363,8 +1350,6 @@ h2 {
     font-size: 10px;
 
     font-weight: 750;
-
-    padding: 6px 2px;
 
     cursor: pointer;
 
@@ -1375,23 +1360,21 @@ h2 {
 
   .mobile button:hover,
   .mobile button.active {
-    background: #f2f4f7;
-
     color: #101828;
+
+    background: #f2f4f7;
   }
 
   .login {
     padding: 16px;
-
-    place-items: center;
   }
 
   .loginbox {
     width: 100%;
 
-    padding: 27px 21px;
+    padding: 28px 21px;
 
-    border-radius: 20px;
+    border-radius: 21px;
   }
 
   .brand {
@@ -1451,21 +1434,17 @@ h2 {
 
 
 /* =========================================================
-   DARKER DEVICE UI SUPPORT
+   SAFE MOBILE FORM HANDLING
    ========================================================= */
 
-@media (prefers-color-scheme: dark) {
+@media (max-width: 700px) {
 
-  /*
-    We intentionally keep THE BG WEB's application surface
-    corporate/light. The login experience remains dark.
-    This prevents automatic OS dark mode from breaking
-    existing app.js components.
-  */
+  .form > *,
+  .two > * {
+    min-width: 0;
+  }
 
-  input,
-  select,
-  textarea {
-    color-scheme: light;
+  .actions {
+    align-items: stretch;
   }
 }
