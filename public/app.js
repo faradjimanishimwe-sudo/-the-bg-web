@@ -1,3691 +1,2912 @@
-/* ============================================================
-   THE BG WEB — FRONTEND APPLICATION
-   Full replacement app.js
-   Compatible with the current THE BG WEB server.js
-   ============================================================ */
-
-'use strict';
-
-/* ============================================================
-   CORE
-   ============================================================ */
-
 const app = document.getElementById('app');
 
 const state = {
-    me: null,
-    data: {
-        users: [],
-        departments: [],
-        tasks: [],
-        activities: [],
-        reports: [],
-        goals: [],
-        income: [],
-        expenses: [],
-        motorcycles: [],
-        changes: [],
-        audit: []
-    },
+  me: null,
+  data: {
+    departments: [],
+    users: [],
+    tasks: [],
+    reports: [],
     activities: [],
     goals: [],
+    motorcycles: [],
+    income: [],
+    expenses: [],
+    maintenance: [],
     assignments: [],
     odometer: [],
-    maintenance: [],
-    closings: [],
-    alerts: [],
+    dailyClosings: [],
     evidence: [],
-    fleet: {},
-    page: 'dashboard',
-    loading: false
+    audit: [],
+    changes: []
+  },
+  page: 'dashboard',
+  activities: [],
+  goals: [],
+  assignments: [],
+  odometer: [],
+  maintenance: [],
+  closings: [],
+  alerts: [],
+  evidence: [],
+  fleet: null
 };
 
 const $ = id => document.getElementById(id);
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-const money = value =>
-    `${Number(value || 0).toLocaleString('en-US')} RWF`;
+const money = n =>
+  Number(n || 0).toLocaleString() + ' RWF';
 
-const numberValue = value => Number(value || 0);
+const esc = s =>
+  String(s ?? '').replace(/[&<>'"]/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;'
+  }[c]));
 
-const esc = value =>
-    String(value ?? '').replace(/[&<>'"]/g, char => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        "'": '&#39;',
-        '"': '&quot;'
-    }[char]));
+async function api(url, opt = {}) {
+  const headers =
+    opt.body instanceof FormData
+      ? { ...(opt.headers || {}) }
+      : {
+          'Content-Type': 'application/json',
+          ...(opt.headers || {})
+        };
 
-const formatDateTime = value => {
-    if (!value) return '-';
+  const r = await fetch(url, {
+    credentials: 'include',
+    ...opt,
+    headers
+  });
 
-    try {
-        return new Date(value).toLocaleString();
-    } catch {
-        return String(value);
-    }
-};
+  const j = await r.json().catch(() => ({}));
 
-const isD1 = () => state.me?.department_id === 'D1';
-const isD2 = () => state.me?.department_id === 'D2';
-const isD3 = () => state.me?.department_id === 'D3';
-const isD4 = () => state.me?.department_id === 'D4';
-const isD5 = () => state.me?.department_id === 'D5';
+  if (!r.ok) {
+    throw Error(j.error || 'Request failed');
+  }
 
-const canFinance = () => isD1() || isD3();
-const canFleet = () => isD1() || isD3() || isD4();
-const canFleetOperations = () => isD1() || isD4();
-const canAudit = () => isD1() || isD3() || isD4() || isD5();
-
-const canManageTasks = () => isD1();
-
-const canCreateTaskForUser = user => {
-    if (!user) return false;
-    return isD1() || user.department_id === state.me?.department_id;
-};
-
-/* ============================================================
-   PERMISSIONS
-   ============================================================ */
-
-const permissions = {
-    D1: {
-        dashboard: true,
-        departments: true,
-        tasks: true,
-        activities: true,
-        reports: true,
-        goals: true,
-        performance: true,
-        finance: true,
-        fleet: true,
-        evidence: true,
-        audit: true
-    },
-
-    D2: {
-        dashboard: true,
-        departments: true,
-        tasks: true,
-        activities: true,
-        reports: true,
-        goals: true,
-        performance: true,
-        finance: false,
-        fleet: false,
-        evidence: true,
-        audit: false
-    },
-
-    D3: {
-        dashboard: true,
-        departments: true,
-        tasks: true,
-        activities: true,
-        reports: true,
-        goals: true,
-        performance: true,
-        finance: true,
-        fleet: true,
-        evidence: true,
-        audit: true
-    },
-
-    D4: {
-        dashboard: true,
-        departments: true,
-        tasks: true,
-        activities: true,
-        reports: true,
-        goals: true,
-        performance: true,
-        finance: false,
-        fleet: true,
-        evidence: true,
-        audit: true
-    },
-
-    D5: {
-        dashboard: true,
-        departments: true,
-        tasks: true,
-        activities: true,
-        reports: true,
-        goals: true,
-        performance: true,
-        finance: false,
-        fleet: false,
-        evidence: true,
-        audit: true
-    }
-};
-
-function allowed(page) {
-    const department = state.me?.department_id;
-    return Boolean(
-        department &&
-        permissions[department] &&
-        permissions[department][page]
-    );
+  return j;
 }
 
-/* ============================================================
-   API
-   ============================================================ */
-
-async function api(url, options = {}) {
-    const config = {
-        credentials: 'include',
-        ...options,
-        headers: {
-            ...(options.body instanceof FormData
-                ? {}
-                : { 'Content-Type': 'application/json' }),
-            ...(options.headers || {})
-        }
-    };
-
-    let response;
-
-    try {
-        response = await fetch(url, config);
-    } catch (error) {
-        throw new Error('Unable to connect to the server.');
-    }
-
-    const contentType =
-        response.headers.get('content-type') || '';
-
-    let result = {};
-
-    if (contentType.includes('application/json')) {
-        result = await response.json().catch(() => ({}));
-    } else {
-        const text = await response.text().catch(() => '');
-        result = text ? { message: text } : {};
-    }
-
-    if (!response.ok) {
-        const message =
-            result.error ||
-            result.message ||
-            `Request failed (${response.status})`;
-
-        throw new Error(message);
-    }
-
-    return result;
-}
-
-/* ============================================================
-   RESPONSE NORMALIZATION
-   ============================================================ */
-
-function extractArray(response, key) {
-    if (Array.isArray(response)) return response;
-
-    if (!response || typeof response !== 'object') {
-        return [];
-    }
-
-    if (Array.isArray(response[key])) {
-        return response[key];
-    }
-
-    if (Array.isArray(response.data)) {
-        return response.data;
-    }
-
-    if (response.data && Array.isArray(response.data[key])) {
-        return response.data[key];
-    }
-
-    return [];
-}
-
-function extractObject(response, key) {
-    if (!response || typeof response !== 'object') {
-        return {};
-    }
-
-    if (response[key] && typeof response[key] === 'object') {
-        return response[key];
-    }
-
-    if (response.data && response.data[key]) {
-        return response.data[key];
-    }
-
-    return response;
-}
-
-/* ============================================================
-   LOAD DATA
-   ============================================================ */
+/* =========================
+   DATA LOADING
+========================= */
 
 async function load() {
-    state.loading = true;
+  const bootstrap = await api('/api/bootstrap');
 
-    try {
-        const bootstrap = await api('/api/bootstrap');
+  state.data = {
+    departments: Array.isArray(bootstrap.departments)
+      ? bootstrap.departments
+      : [],
 
-        state.data = {
-            users: extractArray(bootstrap, 'users'),
-            departments: extractArray(bootstrap, 'departments'),
-            tasks: extractArray(bootstrap, 'tasks'),
-            activities: extractArray(bootstrap, 'activities'),
-            reports: extractArray(bootstrap, 'reports'),
-            goals: extractArray(bootstrap, 'goals'),
-            income: extractArray(bootstrap, 'income'),
-            expenses: extractArray(bootstrap, 'expenses'),
-            motorcycles: extractArray(bootstrap, 'motorcycles'),
-            changes: extractArray(bootstrap, 'changes'),
-            audit: extractArray(bootstrap, 'audit')
-        };
+    users: Array.isArray(bootstrap.users)
+      ? bootstrap.users
+      : [],
 
-        const resources = {
-            activities: '/api/activities',
-            goals: '/api/goals',
-            assignments: '/api/assignments',
-            odometer: '/api/odometer',
-            maintenance: '/api/maintenance',
-            closings: '/api/daily-closings',
-            alerts: '/api/alerts',
-            evidence: '/api/evidence'
-        };
+    tasks: Array.isArray(bootstrap.tasks)
+      ? bootstrap.tasks
+      : [],
 
-        for (const [key, url] of Object.entries(resources)) {
-            try {
-                const result = await api(url);
+    reports: Array.isArray(bootstrap.reports)
+      ? bootstrap.reports
+      : [],
 
-                state[key] = extractArray(result, key);
+    activities: Array.isArray(bootstrap.activities)
+      ? bootstrap.activities
+      : [],
 
-                if (!state[key].length) {
-                    state[key] = extractArray(result, 'items');
-                }
-            } catch {
-                state[key] = [];
-            }
-        }
+    goals: Array.isArray(bootstrap.goals)
+      ? bootstrap.goals
+      : [],
 
-        state.activities =
-            state.activities.length
-                ? state.activities
-                : state.data.activities;
+    motorcycles: Array.isArray(bootstrap.motorcycles)
+      ? bootstrap.motorcycles
+      : [],
 
-        state.goals =
-            state.goals.length
-                ? state.goals
-                : state.data.goals;
+    income: Array.isArray(bootstrap.income)
+      ? bootstrap.income
+      : [],
 
-        try {
-            const fleetResult = await api('/api/fleet-summary');
+    expenses: Array.isArray(bootstrap.expenses)
+      ? bootstrap.expenses
+      : [],
 
-            state.fleet =
-                extractObject(fleetResult, 'summary');
+    maintenance: Array.isArray(bootstrap.maintenance)
+      ? bootstrap.maintenance
+      : [],
 
-            if (!state.fleet ||
-                Object.keys(state.fleet).length === 0) {
-                state.fleet = fleetResult || {};
-            }
-        } catch {
-            state.fleet = {};
-        }
+    assignments: Array.isArray(bootstrap.assignments)
+      ? bootstrap.assignments
+      : [],
 
-    } finally {
-        state.loading = false;
-    }
+    odometer: Array.isArray(bootstrap.odometer)
+      ? bootstrap.odometer
+      : [],
+
+    dailyClosings: Array.isArray(bootstrap.dailyClosings)
+      ? bootstrap.dailyClosings
+      : [],
+
+    evidence: Array.isArray(bootstrap.evidence)
+      ? bootstrap.evidence
+      : [],
+
+    audit: Array.isArray(bootstrap.audit)
+      ? bootstrap.audit
+      : [],
+
+    changes: Array.isArray(bootstrap.changes)
+      ? bootstrap.changes
+      : []
+  };
+
+  state.activities = state.data.activities;
+  state.goals = state.data.goals;
+  state.assignments = state.data.assignments;
+  state.odometer = state.data.odometer;
+  state.maintenance = state.data.maintenance;
+  state.closings = state.data.dailyClosings;
+  state.evidence = state.data.evidence;
+
+  try {
+    const r = await api('/api/alerts');
+
+    state.alerts = Array.isArray(r.alerts)
+      ? r.alerts
+      : [];
+  } catch {
+    state.alerts = [];
+  }
+
+  try {
+    const r = await api('/api/fleet-summary');
+
+    state.fleet = r.summary || null;
+  } catch {
+    state.fleet = null;
+  }
 }
 
-/* ============================================================
-   BOOT
-   ============================================================ */
+/* =========================
+   AUTHENTICATION
+========================= */
 
 async function boot() {
-    try {
-        const response = await api('/api/me');
+  try {
+    const r = await api('/api/me');
 
-        if (!response?.user) {
-            throw new Error('No authenticated user.');
-        }
-
-        state.me = response.user;
-
-        await load();
-
-        if (!allowed(state.page)) {
-            state.page = 'dashboard';
-        }
-
-        render();
-
-    } catch {
-        state.me = null;
-        login();
+    if (!r.user) {
+      throw Error('Not authenticated');
     }
-}
 
-/* ============================================================
-   LOGIN
-   ============================================================ */
+    state.me = r.user;
+
+    await load();
+
+    render();
+  } catch {
+    state.me = null;
+    login();
+  }
+}
 
 function login() {
-    app.innerHTML = `
-        <div class="login">
-            <div class="loginbox">
-                <div class="brand">THE BG</div>
-                <div class="sub">
-                    ONE COMPANY MANAGEMENT PLATFORM
-                </div>
+  app.innerHTML = `
+    <div class="login">
+      <div class="loginbox">
+        <div class="brand">THE BG</div>
+        <div class="sub">ONE COMPANY MANAGEMENT PLATFORM</div>
 
-                <h2>Sign in</h2>
+        <h2>Sign in</h2>
 
-                <form onsubmit="doLogin(event)" class="form">
+        <form onsubmit="doLogin(event)" class="form">
 
-                    <select id="username" required>
-                        <option value="d1">
-                            D1 — MANISHIMWE FARADJI
-                        </option>
+          <select id="username">
+            <option value="d1">
+              D1 — MANISHIMWE FARADJI
+            </option>
 
-                        <option value="d2">
-                            D2 — AHMED FAZZIR
-                        </option>
+            <option value="d2">
+              D2 — AHMED FAZZIR
+            </option>
 
-                        <option value="d3">
-                            D3 — NIYITANGA OSAMA
-                        </option>
+            <option value="d3">
+              D3 — NIYITANGA OSAMA
+            </option>
 
-                        <option value="d4">
-                            D4 — KIREZI NASSIB
-                        </option>
+            <option value="d4">
+              D4 — KIREZI NASSIB
+            </option>
 
-                        <option value="d5">
-                            D5 — IMANANIYOGISUBIZO YUSSUF
-                        </option>
-                    </select>
+            <option value="d5">
+              D5 — IMANANIYOGISUBIZO YUSSUF
+            </option>
+          </select>
 
-                    <input
-                        id="password"
-                        type="password"
-                        placeholder="Password"
-                        autocomplete="current-password"
-                        required
-                    >
+          <input
+            id="password"
+            type="password"
+            placeholder="Password"
+            required
+          >
 
-                    <button class="btn" type="submit">
-                        Sign in
-                    </button>
-                </form>
+          <button class="btn" type="submit">
+            Sign in
+          </button>
 
-                <p class="muted">
-                    Production deployment uses the password
-                    configured by the administrator.
-                </p>
-            </div>
-        </div>
-    `;
+        </form>
+
+        <p class="muted">
+          Production deployment uses the password configured by the administrator.
+        </p>
+      </div>
+    </div>
+  `;
 }
 
-async function doLogin(event) {
-    event.preventDefault();
+async function doLogin(e) {
+  e.preventDefault();
 
-    const username = $('username')?.value;
-    const password = $('password')?.value;
+  try {
+    await api('/api/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: $('username').value,
+        password: $('password').value
+      })
+    });
 
-    if (!username || !password) {
-        alert('Username and password are required.');
-        return;
-    }
-
-    try {
-        await api('/api/login', {
-            method: 'POST',
-            body: JSON.stringify({
-                username,
-                password
-            })
-        });
-
-        await boot();
-
-    } catch (error) {
-        alert(error.message);
-    }
+    await boot();
+  } catch (x) {
+    alert(x.message);
+  }
 }
 
 async function logout() {
-    try {
-        await api('/api/logout', {
-            method: 'POST'
-        });
-    } catch {
-        // Continue to local logout even if server request fails.
-    }
+  try {
+    await api('/api/logout', {
+      method: 'POST'
+    });
+  } catch {}
 
-    state.me = null;
-    state.data = {
-        users: [],
-        departments: [],
-        tasks: [],
-        activities: [],
-        reports: [],
-        goals: [],
-        income: [],
-        expenses: [],
-        motorcycles: [],
-        changes: [],
-        audit: []
-    };
+  state.me = null;
+  state.page = 'dashboard';
 
-    state.page = 'dashboard';
-
-    login();
+  login();
 }
 
-/* ============================================================
-   NAVIGATION
-   ============================================================ */
+/* =========================
+   PERMISSIONS
+========================= */
 
-const navItems = [
-    ['dashboard', 'Dashboard'],
-    ['departments', 'Departments'],
-    ['tasks', 'Tasks'],
-    ['activities', 'Daily Work'],
-    ['reports', 'Reports'],
-    ['goals', 'Goals'],
-    ['performance', 'Performance'],
-    ['finance', 'Finance'],
-    ['fleet', 'Motorcycle Fleet'],
-    ['evidence', 'Evidence'],
-    ['audit', 'Audit Trail']
+const permissions = {
+  D1: [
+    'dashboard',
+    'departments',
+    'tasks',
+    'activities',
+    'reports',
+    'goals',
+    'performance',
+    'finance',
+    'fleet',
+    'evidence',
+    'audit'
+  ],
+
+  D2: [
+    'dashboard',
+    'departments',
+    'tasks',
+    'activities',
+    'reports',
+    'goals',
+    'performance',
+    'evidence'
+  ],
+
+  D3: [
+    'dashboard',
+    'departments',
+    'tasks',
+    'activities',
+    'reports',
+    'goals',
+    'performance',
+    'finance',
+    'fleet',
+    'evidence',
+    'audit'
+  ],
+
+  D4: [
+    'dashboard',
+    'departments',
+    'tasks',
+    'activities',
+    'reports',
+    'goals',
+    'performance',
+    'fleet',
+    'evidence',
+    'audit'
+  ],
+
+  D5: [
+    'dashboard',
+    'departments',
+    'tasks',
+    'activities',
+    'reports',
+    'goals',
+    'performance',
+    'evidence',
+    'audit'
+  ]
+};
+
+function can(page) {
+  if (!state.me) return false;
+
+  const list =
+    permissions[state.me.department_id] || [];
+
+  return list.includes(page);
+}
+
+/* =========================
+   NAVIGATION
+========================= */
+
+const nav = [
+  ['dashboard', 'Dashboard'],
+  ['departments', 'Departments'],
+  ['tasks', 'Tasks'],
+  ['activities', 'Daily Work'],
+  ['reports', 'Reports'],
+  ['goals', 'Goals'],
+  ['performance', 'Performance'],
+  ['finance', 'Finance'],
+  ['fleet', 'Motorcycle Fleet'],
+  ['evidence', 'Evidence'],
+  ['audit', 'Audit Trail']
 ];
 
-function visibleNav() {
-    return navItems.filter(([id]) => allowed(id));
+function shell(title, body) {
+  if (!state.me) {
+    login();
+    return;
+  }
+
+  const allowed = nav.filter(([id]) => can(id));
+
+  app.innerHTML = `
+    <div class="layout">
+
+      <aside class="sidebar">
+
+        <div class="brand">
+          THE BG
+        </div>
+
+        <div class="sub">
+          MANAGEMENT WEB
+        </div>
+
+        <div class="user">
+          <b>${esc(state.me.name)}</b>
+          <span>${esc(state.me.department_id)}</span>
+        </div>
+
+        <div class="nav">
+
+          ${allowed.map(([id, t]) => `
+            <button
+              class="${state.page === id ? 'active' : ''}"
+              onclick="go('${id}')"
+            >
+              ${t}
+            </button>
+          `).join('')}
+
+          <button onclick="logout()">
+            Logout
+          </button>
+
+        </div>
+
+      </aside>
+
+      <main class="main">
+
+        <header class="top">
+
+          <div>
+            <div class="eyebrow">
+              THE BG WEB
+            </div>
+
+            <h1>
+              ${title}
+            </h1>
+          </div>
+
+          <span class="badge">
+            ${esc(state.me.department_id)}
+            ·
+            ${esc(state.me.name)}
+          </span>
+
+        </header>
+
+        ${body}
+
+      </main>
+
+    </div>
+
+    <nav class="mobile">
+
+      ${[
+        ['dashboard', 'Home'],
+        ['tasks', 'Tasks'],
+        ['finance', 'Finance'],
+        ['fleet', 'Fleet'],
+        ['audit', 'Audit']
+      ]
+      .filter(([id]) => can(id))
+      .map(([id, t]) => `
+        <button onclick="go('${id}')">
+          ${t}
+        </button>
+      `)
+      .join('')}
+
+    </nav>
+  `;
 }
 
 function go(page) {
-    if (!allowed(page)) {
-        alert('You do not have permission to access this section.');
-        return;
-    }
+  if (!can(page)) {
+    page = 'dashboard';
+  }
 
-    state.page = page;
-    render();
+  state.page = page;
+  render();
 }
 
-/* ============================================================
-   SHELL
-   ============================================================ */
-
-function shell(title, body) {
-    const navigation = visibleNav();
-
-    app.innerHTML = `
-        <div class="layout">
-
-            <aside class="sidebar">
-
-                <div class="brand">THE BG</div>
-
-                <div class="sub">
-                    MANAGEMENT WEB
-                </div>
-
-                <div class="user">
-                    <b>${esc(state.me?.name || '')}</b>
-                    <span>
-                        ${esc(state.me?.department_id || '')}
-                    </span>
-                </div>
-
-                <div class="nav">
-
-                    ${navigation.map(([id, label]) => `
-                        <button
-                            class="${state.page === id ? 'active' : ''}"
-                            onclick="go('${id}')"
-                        >
-                            ${esc(label)}
-                        </button>
-                    `).join('')}
-
-                    <button onclick="logout()">
-                        Logout
-                    </button>
-
-                </div>
-            </aside>
-
-            <main class="main">
-
-                <header class="top">
-
-                    <div>
-                        <div class="eyebrow">
-                            THE BG WEB
-                        </div>
-
-                        <h1>${esc(title)}</h1>
-                    </div>
-
-                    <span class="badge">
-                        ${esc(state.me?.department_id || '')}
-                        ·
-                        ${esc(state.me?.name || '')}
-                    </span>
-
-                </header>
-
-                ${body}
-
-            </main>
-        </div>
-
-        <nav class="mobile">
-            ${navigation
-                .slice(0, 5)
-                .map(([id, label]) => `
-                    <button onclick="go('${id}')">
-                        ${esc(label)}
-                    </button>
-                `)
-                .join('')}
-        </nav>
-    `;
-}
-
-/* ============================================================
-   COMMON UI
-   ============================================================ */
-
-const card = (label, value) => `
-    <div class="card stat">
-        <span>${esc(label)}</span>
-        <strong>${esc(value)}</strong>
-    </div>
+const card = (a, b) => `
+  <div class="card stat">
+    <span>${a}</span>
+    <strong>${b}</strong>
+  </div>
 `;
 
-function empty(message = 'No records found.') {
-    return `
-        <p class="muted">
-            ${esc(message)}
-        </p>
-    `;
-}
-
-function refreshButton() {
-    return `
-        <button
-            class="btn light"
-            type="button"
-            onclick="refresh()"
-        >
-            Refresh
-        </button>
-    `;
-}
-
-/* ============================================================
+/* =========================
    DASHBOARD
-   ============================================================ */
+========================= */
 
 function dashboard() {
-    const d = state.data;
+  const d = state.data;
 
-    const income = d.income.reduce(
-        (total, item) =>
-            total + numberValue(item.amount),
-        0
-    );
+  const inc = d.income.reduce(
+    (a, x) => a + Number(x.amount || 0),
+    0
+  );
 
-    const expenses = d.expenses.reduce(
-        (total, item) =>
-            total + numberValue(item.amount),
-        0
-    );
+  const exp = d.expenses.reduce(
+    (a, x) => a + Number(x.amount || 0),
+    0
+  );
 
-    const completed = d.tasks.filter(
-        task => task.status === 'Completed'
-    ).length;
+  const done = d.tasks.filter(
+    x => x.status === 'Completed'
+  ).length;
 
-    const overdue = d.tasks.filter(task =>
-        task.status !== 'Completed' &&
-        task.deadline &&
-        task.deadline < today()
-    ).length;
+  const over = d.tasks.filter(
+    x =>
+      x.status !== 'Completed' &&
+      x.deadline &&
+      x.deadline < today()
+  ).length;
 
-    const departments = d.departments || [];
+  shell(
+    'THE BG TODAY',
+    `
+      <div class="grid">
 
-    shell(
-        'THE BG TODAY',
-        `
-        <div class="grid">
+        ${card(
+          'Active Users',
+          d.users.filter(x => x.active).length
+        )}
 
-            ${card(
-                'Active Users',
-                d.users.filter(user => user.active).length
-            )}
+        ${card(
+          'Tasks',
+          d.tasks.length
+        )}
 
-            ${card('Tasks', d.tasks.length)}
+        ${card(
+          'Completed',
+          done
+        )}
 
-            ${card('Completed', completed)}
+        ${card(
+          'Overdue',
+          over
+        )}
 
-            ${card('Overdue', overdue)}
+        ${card(
+          'Income',
+          money(inc)
+        )}
 
-            ${card('Income', money(income))}
+        ${card(
+          'Expenses',
+          money(exp)
+        )}
 
-            ${card('Expenses', money(expenses))}
+        ${card(
+          'Net Result',
+          money(inc - exp)
+        )}
 
-            ${card('Net Result', money(income - expenses))}
+        ${card(
+          'Motorcycles',
+          d.motorcycles.length
+        )}
 
-            ${card(
-                'Motorcycles',
-                d.motorcycles.length
-            )}
+      </div>
 
-        </div>
+      <div class="section grid2">
 
-        <div class="section grid2">
-
-            <div class="card">
-
-                <h2>Department Performance</h2>
-
-                ${
-                    departments.length
-                        ? departments.map(department => {
-
-                            const tasks = d.tasks.filter(
-                                task =>
-                                    task.responsible_name ===
-                                    department.person
-                            );
-
-                            const score = tasks.length
-                                ? Math.round(
-                                    tasks.filter(
-                                        task =>
-                                            task.status ===
-                                            'Completed'
-                                    ).length /
-                                    tasks.length *
-                                    100
-                                )
-                                : 0;
-
-                            return `
-                                <div class="row">
-                                    <b>
-                                        ${esc(department.id)}
-                                    </b>
-
-                                    <span>
-                                        ${esc(department.person)}
-                                    </span>
-
-                                    <b>${score}%</b>
-                                </div>
-                            `;
-                        }).join('')
-                        : empty()
-                }
-
-            </div>
-
-            <div class="card">
-
-                <h2>Alerts</h2>
-
-                ${
-                    state.alerts.length
-                        ? state.alerts
-                            .slice(0, 10)
-                            .map(alertItem => `
-                                <div class="alert ${esc(
-                                    alertItem.level || ''
-                                )}">
-                                    ${esc(alertItem.text)}
-                                </div>
-                            `)
-                            .join('')
-                        : empty('No active alerts.')
-                }
-
-            </div>
-
-        </div>
-        `
-    );
-}
-
-/* ============================================================
-   DEPARTMENTS
-   ============================================================ */
-
-function departments() {
-    shell(
-        'Departments',
-        `
-        <div class="grid">
-
-            ${
-                state.data.departments.length
-                    ? state.data.departments.map(department => {
-
-                        const mine =
-                            department.id ===
-                            state.me.department_id;
-
-                        const taskCount =
-                            state.data.tasks.filter(
-                                task =>
-                                    task.responsible_name ===
-                                    department.person
-                            ).length;
-
-                        const reportCount =
-                            state.data.reports.filter(
-                                report =>
-                                    report.user_name ===
-                                    department.person
-                            ).length;
-
-                        return `
-                            <div class="card">
-
-                                <span class="eyebrow">
-                                    ${esc(department.id)}
-                                    ${
-                                        mine
-                                            ? ' · YOUR WORKSPACE'
-                                            : ''
-                                    }
-                                </span>
-
-                                <h2>
-                                    ${esc(department.position)}
-                                </h2>
-
-                                <h3>
-                                    ${esc(department.person)}
-                                </h3>
-
-                                <p>
-                                    ${esc(
-                                        department.responsibility
-                                    )}
-                                </p>
-
-                                <div class="tag">
-                                    One responsible person
-                                </div>
-
-                                <div class="row">
-                                    <span>Tasks</span>
-                                    <b>${taskCount}</b>
-                                </div>
-
-                                <div class="row">
-                                    <span>Reports</span>
-                                    <b>${reportCount}</b>
-                                </div>
-
-                            </div>
-                        `;
-                    }).join('')
-                    : empty()
-            }
-
-        </div>
-
-        ${
-            isD1()
-                ? `
-                    <div class="section card">
-                        <h2>Accounts</h2>
-
-                        <p class="muted">
-                            Account administration is protected
-                            by the secure backend.
-                        </p>
-                    </div>
-                `
-                : ''
-        }
-        `
-    );
-}
-
-/* ============================================================
-   TASKS
-   ============================================================ */
-
-function taskStatusOptions(task) {
-    const statuses = [
-        'Not Started',
-        'Accepted',
-        'Rejected',
-        'In Progress',
-        'Completed'
-    ];
-
-    if (isD1()) {
-        return [
-            ...statuses,
-            'Delayed'
-        ];
-    }
-
-    return statuses;
-}
-
-function taskActionCell(task) {
-    const responsible =
-        Number(task.responsible_user) ===
-        Number(state.me?.id);
-
-    const manager = isD1();
-
-    if (!manager && !responsible) {
-        return esc(task.status || '-');
-    }
-
-    return `
-        <select
-            onchange="changeTask(
-                ${Number(task.id)},
-                this.value
-            )"
-        >
-            ${taskStatusOptions(task).map(status => `
-                <option
-                    value="${esc(status)}"
-                    ${
-                        status === task.status
-                            ? 'selected'
-                            : ''
-                    }
-                >
-                    ${esc(status)}
-                </option>
-            `).join('')}
-        </select>
-    `;
-}
-
-function tasks() {
-    const users = state.data.users.filter(user => {
-
-        if (!user.active) return false;
-
-        if (isD1()) return true;
-
-        return user.department_id ===
-            state.me.department_id;
-    });
-
-    shell(
-        'Tasks',
-        `
         <div class="card">
 
-            <h2>Create Task</h2>
+          <h2>
+            Department Performance
+          </h2>
 
-            <form
-                class="form"
-                onsubmit="createTask(event)"
-            >
+          ${d.departments.map(x => {
 
-                <div class="two">
+            const ts = d.tasks.filter(
+              t => t.responsible_name === x.person
+            );
 
-                    <input
-                        id="tn"
-                        placeholder="Task name"
-                        required
-                    >
+            const sc = ts.length
+              ? Math.round(
+                  ts.filter(
+                    t => t.status === 'Completed'
+                  ).length /
+                  ts.length *
+                  100
+                )
+              : 0;
 
-                    <select id="tu" required>
-                        ${
-                            users.length
-                                ? users.map(user => `
-                                    <option
-                                        value="${Number(user.id)}"
-                                    >
-                                        ${esc(
-                                            user.department_id
-                                        )}
-                                        —
-                                        ${esc(user.name)}
-                                    </option>
-                                `).join('')
-                                : `
-                                    <option value="">
-                                        No eligible users
-                                    </option>
-                                `
-                        }
-                    </select>
+            return `
+              <div class="row">
 
-                </div>
+                <b>
+                  ${esc(x.id)}
+                </b>
 
-                <div class="two">
+                <span>
+                  ${esc(x.person)}
+                </span>
 
-                    <input
-                        id="ts"
-                        type="date"
-                        value="${today()}"
-                        required
-                    >
+                <b>
+                  ${sc}%
+                </b>
 
-                    <input
-                        id="td"
-                        type="date"
-                    >
+              </div>
+            `;
 
-                </div>
-
-                <div class="two">
-
-                    <select id="tp">
-                        <option value="Normal">
-                            Normal
-                        </option>
-
-                        <option value="High">
-                            High
-                        </option>
-
-                        <option value="Low">
-                            Low
-                        </option>
-                    </select>
-
-                    <textarea
-                        id="tx"
-                        placeholder="Description"
-                    ></textarea>
-
-                </div>
-
-                <button
-                    class="btn"
-                    type="submit"
-                    ${
-                        users.length
-                            ? ''
-                            : 'disabled'
-                    }
-                >
-                    Create Task
-                </button>
-
-            </form>
+          }).join('')}
 
         </div>
 
-        <div class="card section tablewrap">
+        <div class="card">
 
-            <div class="row">
-                <h2>Task Register</h2>
-                ${refreshButton()}
-            </div>
+          <h2>
+            Alerts
+          </h2>
 
-            <table class="table">
-
-                <tr>
-                    <th>Task</th>
-                    <th>Responsible</th>
-                    <th>Deadline</th>
-                    <th>Priority</th>
-                    <th>Status</th>
-                </tr>
-
-                ${
-                    state.data.tasks.length
-                        ? state.data.tasks.map(task => `
-                            <tr>
-
-                                <td>
-                                    <b>
-                                        ${esc(task.name)}
-                                    </b>
-
-                                    ${
-                                        task.description
-                                            ? `
-                                                <small>
-                                                    ${esc(
-                                                        task.description
-                                                    )}
-                                                </small>
-                                            `
-                                            : ''
-                                    }
-
-                                    ${
-                                        task.rejection_reason
-                                            ? `
-                                                <small>
-                                                    Rejection:
-                                                    ${esc(
-                                                        task.rejection_reason
-                                                    )}
-                                                </small>
-                                            `
-                                            : ''
-                                    }
-                                </td>
-
-                                <td>
-                                    ${esc(
-                                        task.responsible_name ||
-                                        '-'
-                                    )}
-                                </td>
-
-                                <td>
-                                    ${esc(
-                                        task.deadline || '-'
-                                    )}
-                                </td>
-
-                                <td>
-                                    ${esc(
-                                        task.priority || '-'
-                                    )}
-                                </td>
-
-                                <td>
-                                    ${taskActionCell(task)}
-                                </td>
-
-                            </tr>
-                        `).join('')
-                        : `
-                            <tr>
-                                <td colspan="5">
-                                    ${empty('No tasks found.')}
-                                </td>
-                            </tr>
-                        `
-                }
-
-            </table>
+          ${
+            state.alerts.length
+              ? state.alerts
+                  .slice(0, 8)
+                  .map(a => `
+                    <div class="alert ${esc(
+                      a.severity || 'info'
+                    )}">
+                      <b>
+                        ${esc(a.title || '')}
+                      </b>
+                      <div>
+                        ${esc(a.message || '')}
+                      </div>
+                    </div>
+                  `)
+                  .join('')
+              : `
+                <p class="muted">
+                  No active alerts.
+                </p>
+              `
+          }
 
         </div>
-        `
-    );
+
+      </div>
+    `
+  );
 }
 
-async function createTask(event) {
-    event.preventDefault();
+/* =========================
+   DEPARTMENTS
+========================= */
 
-    const responsibleUser =
-        Number($('tu')?.value);
+function departments() {
+  shell(
+    'Departments',
+    `
+      <div class="grid">
 
-    if (!responsibleUser) {
-        alert('Please select a responsible user.');
-        return;
-    }
+        ${state.data.departments.map(d => {
 
-    const targetUser =
-        state.data.users.find(
-            user => Number(user.id) === responsibleUser
-        );
+          const mine =
+            d.id === state.me.department_id;
 
-    if (!canCreateTaskForUser(targetUser)) {
-        alert(
-            'You cannot assign this task to that department.'
-        );
-        return;
-    }
+          return `
+            <div class="card">
 
-    try {
-        await api('/api/tasks', {
-            method: 'POST',
-            body: JSON.stringify({
-                name: $('tn').value.trim(),
-                responsible_user: responsibleUser,
-                start_date: $('ts').value,
-                deadline: $('td').value || null,
-                priority: $('tp').value,
-                description: $('tx').value.trim()
-            })
-        });
+              <span class="eyebrow">
+                ${esc(d.id)}
+                ${mine ? ' · YOUR WORKSPACE' : ''}
+              </span>
 
-        await refresh();
+              <h2>
+                ${esc(d.position)}
+              </h2>
 
-    } catch (error) {
-        alert(error.message);
-    }
+              <h3>
+                ${esc(d.person)}
+              </h3>
+
+              <p>
+                ${esc(d.responsibility)}
+              </p>
+
+              <div class="tag">
+                One responsible person
+              </div>
+
+              <div class="row">
+                <span>Tasks</span>
+                <b>
+                  ${
+                    state.data.tasks.filter(
+                      t => t.responsible_name === d.person
+                    ).length
+                  }
+                </b>
+              </div>
+
+              <div class="row">
+                <span>Reports</span>
+                <b>
+                  ${
+                    state.data.reports.filter(
+                      r => r.user_name === d.person
+                    ).length
+                  }
+                </b>
+              </div>
+
+            </div>
+          `;
+
+        }).join('')}
+
+      </div>
+
+      ${
+        state.me.department_id === 'D1'
+          ? `
+            <div class="section card">
+
+              <h2>
+                Accounts
+              </h2>
+
+              <p class="muted">
+                D1 account controls are available through the secure API for production administration.
+              </p>
+
+            </div>
+          `
+          : ''
+      }
+    `
+  );
+}
+
+/* =========================
+   TASKS
+========================= */
+
+function tasks() {
+  const users = state.data.users.filter(
+    u =>
+      u.active &&
+      (
+        state.me.department_id === 'D1' ||
+        u.department_id === state.me.department_id
+      )
+  );
+
+  shell(
+    'Tasks',
+    `
+      <div class="card">
+
+        <h2>
+          Create Task
+        </h2>
+
+        <form
+          class="form"
+          onsubmit="createTask(event)"
+        >
+
+          <div class="two">
+
+            <input
+              id="tn"
+              placeholder="Task name"
+              required
+            >
+
+            <select id="tu">
+
+              ${users.map(u => `
+                <option value="${u.id}">
+                  ${esc(u.department_id)}
+                  —
+                  ${esc(u.name)}
+                </option>
+              `).join('')}
+
+            </select>
+
+          </div>
+
+          <div class="two">
+
+            <input
+              id="ts"
+              type="date"
+              value="${today()}"
+            >
+
+            <input
+              id="td"
+              type="date"
+            >
+
+          </div>
+
+          <div class="two">
+
+            <select id="tp">
+              <option>Normal</option>
+              <option>High</option>
+              <option>Low</option>
+            </select>
+
+            <textarea
+              id="tx"
+              placeholder="Description"
+            ></textarea>
+
+          </div>
+
+          <button class="btn">
+            Create Task
+          </button>
+
+        </form>
+
+      </div>
+
+      <div class="card section tablewrap">
+
+        <table class="table">
+
+          <tr>
+            <th>Task</th>
+            <th>Responsible</th>
+            <th>Deadline</th>
+            <th>Priority</th>
+            <th>Status</th>
+          </tr>
+
+          ${state.data.tasks.map(t => {
+
+            const isResponsible =
+              Number(t.responsible_user) ===
+              Number(state.me.id);
+
+            const canControl =
+              state.me.department_id === 'D1' ||
+              isResponsible;
+
+            const statuses = [
+              'Not Started',
+              'Accepted',
+              'Rejected',
+              'In Progress',
+              'Completed',
+              'Cancelled',
+              'On Hold'
+            ];
+
+            return `
+              <tr>
+
+                <td>
+                  <b>
+                    ${esc(t.name)}
+                  </b>
+
+                  <small>
+                    ${esc(t.description || '')}
+                  </small>
+                </td>
+
+                <td>
+                  ${esc(t.responsible_name || '-')}
+                </td>
+
+                <td>
+                  ${t.deadline || '-'}
+                </td>
+
+                <td>
+                  ${esc(t.priority || '-')}
+                </td>
+
+                <td>
+
+                  ${
+                    canControl
+                      ? `
+                        <select
+                          onchange="changeTask(${t.id},this.value)"
+                        >
+
+                          ${statuses.map(s => `
+                            <option
+                              value="${esc(s)}"
+                              ${
+                                s === t.status
+                                  ? 'selected'
+                                  : ''
+                              }
+                            >
+                              ${esc(s)}
+                            </option>
+                          `).join('')}
+
+                        </select>
+                      `
+                      : `
+                        <span class="tag">
+                          ${esc(t.status)}
+                        </span>
+                      `
+                  }
+
+                </td>
+
+              </tr>
+            `;
+
+          }).join('')}
+
+        </table>
+
+      </div>
+    `
+  );
+}
+
+async function createTask(e) {
+  e.preventDefault();
+
+  try {
+    await api('/api/tasks', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: $('tn').value,
+        responsible_user: Number($('tu').value),
+        start_date: $('ts').value,
+        deadline: $('td').value,
+        priority: $('tp').value,
+        description: $('tx').value
+      })
+    });
+
+    await refresh();
+
+  } catch (x) {
+    alert(x.message);
+  }
 }
 
 async function changeTask(id, status) {
-    const task =
-        state.data.tasks.find(
-            item => Number(item.id) === Number(id)
-        );
+  try {
 
-    if (!task) return;
-
-    const responsible =
-        Number(task.responsible_user) ===
-        Number(state.me?.id);
-
-    if (!isD1() && !responsible) {
-        alert(
-            'You can only update tasks assigned to you.'
-        );
-
-        render();
-        return;
-    }
-
-    let rejectionReason = '';
+    let reason = '';
 
     if (status === 'Rejected') {
-        rejectionReason =
-            prompt(
-                'Reason for rejecting this task:'
-            )?.trim() || '';
+      reason = prompt(
+        'Reason for rejecting this task:'
+      );
 
-        if (!rejectionReason) {
-            alert(
-                'A rejection reason is required.'
-            );
-
-            render();
-            return;
-        }
-    }
-
-    try {
-        await api(`/api/tasks/${id}`, {
-            method: 'PATCH',
-            body: JSON.stringify({
-                status,
-                rejection_reason:
-                    rejectionReason || undefined
-            })
-        });
-
+      if (!reason || !reason.trim()) {
         await refresh();
-
-    } catch (error) {
-        alert(error.message);
-        render();
+        return;
+      }
     }
+
+    await api('/api/tasks/' + id, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status,
+        reason
+      })
+    });
+
+    await refresh();
+
+  } catch (x) {
+    alert(x.message);
+    await refresh();
+  }
 }
 
-/* ============================================================
-   DAILY ACTIVITIES
-   ============================================================ */
+/* =========================
+   DAILY WORK
+========================= */
 
 function activities() {
-    shell(
-        'Daily Work',
-        `
-        <div class="card">
+  shell(
+    'Daily Work',
+    `
+      <div class="card">
 
-            <h2>Daily Activity</h2>
+        <h2>
+          Daily Activity
+        </h2>
 
-            <form
-                class="form"
-                onsubmit="saveActivity(event)"
-            >
+        <form
+          class="form"
+          onsubmit="saveActivity(event)"
+        >
 
-                <input
-                    id="adate"
-                    type="date"
-                    value="${today()}"
-                    required
-                >
+          <input
+            id="adate"
+            type="date"
+            value="${today()}"
+          >
 
-                <textarea
-                    id="adone"
-                    placeholder="What did you complete today?"
-                    required
-                ></textarea>
+          <textarea
+            id="adone"
+            placeholder="What did you complete today?"
+            required
+          ></textarea>
 
-                <textarea
-                    id="aunfinished"
-                    placeholder="What remains unfinished?"
-                ></textarea>
+          <textarea
+            id="aunfinished"
+            placeholder="What remains unfinished?"
+          ></textarea>
 
-                <textarea
-                    id="areason"
-                    placeholder="Reason if unfinished"
-                ></textarea>
+          <textarea
+            id="areason"
+            placeholder="Reason if unfinished"
+          ></textarea>
 
-                <input
-                    id="atime"
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    placeholder="Time spent (hours)"
-                >
+          <input
+            id="atime"
+            type="number"
+            min="0"
+            step="0.5"
+            placeholder="Time spent (hours)"
+          >
 
-                <button class="btn" type="submit">
-                    Save Daily Activity
-                </button>
+          <button class="btn">
+            Save Daily Activity
+          </button>
 
-            </form>
+        </form>
 
-        </div>
+      </div>
 
-        <div class="section grid">
+      <div class="section grid">
 
-            ${
-                state.activities.length
-                    ? state.activities
-                        .slice(0, 50)
-                        .map(activity => `
-                            <div class="card">
+        ${state.activities
+          .slice(0, 30)
+          .map(a => `
+            <div class="card">
 
-                                <b>
-                                    ${esc(
-                                        activity.user_name ||
-                                        '-'
-                                    )}
-                                </b>
+              <b>
+                ${esc(a.user_name)}
+              </b>
 
-                                ·
+              · ${esc(a.date)}
 
-                                ${esc(activity.date || '-')}
+              <p>
+                ${esc(a.done)}
+              </p>
 
-                                <p>
-                                    ${esc(
-                                        activity.done || ''
-                                    )}
-                                </p>
+              <small>
+                ${esc(a.unfinished || '')}
+              </small>
 
-                                ${
-                                    activity.unfinished
-                                        ? `
-                                            <small>
-                                                Unfinished:
-                                                ${esc(
-                                                    activity.unfinished
-                                                )}
-                                            </small>
-                                        `
-                                        : ''
-                                }
+            </div>
+          `)
+          .join('')}
 
-                                ${
-                                    activity.reason
-                                        ? `
-                                            <small>
-                                                Reason:
-                                                ${esc(
-                                                    activity.reason
-                                                )}
-                                            </small>
-                                        `
-                                        : ''
-                                }
-
-                            </div>
-                        `).join('')
-                    : empty()
-            }
-
-        </div>
-        `
-    );
+      </div>
+    `
+  );
 }
 
-async function saveActivity(event) {
-    event.preventDefault();
+async function saveActivity(e) {
+  e.preventDefault();
 
-    try {
-        await api('/api/activities', {
-            method: 'POST',
-            body: JSON.stringify({
-                date: $('adate').value,
-                done: $('adone').value.trim(),
-                unfinished:
-                    $('aunfinished').value.trim(),
-                reason:
-                    $('areason').value.trim(),
-                time_spent:
-                    Number($('atime').value || 0)
-            })
-        });
+  try {
+    await api('/api/activities', {
+      method: 'POST',
+      body: JSON.stringify({
+        date: $('adate').value,
+        done: $('adone').value,
+        unfinished: $('aunfinished').value,
+        reason: $('areason').value,
+        time_spent: Number(
+          $('atime').value || 0
+        )
+      })
+    });
 
-        await refresh();
+    await refresh();
 
-    } catch (error) {
-        alert(error.message);
-    }
+  } catch (x) {
+    alert(x.message);
+  }
 }
 
-/* ============================================================
+/* =========================
    REPORTS
-   ============================================================ */
+========================= */
 
 function reports() {
-    shell(
-        'Reports',
-        `
-        <div class="card">
+  shell(
+    'Reports',
+    `
+      <div class="card">
 
-            <h2>Submit Report</h2>
+        <form
+          class="form"
+          onsubmit="createReport(event)"
+        >
 
-            <form
-                class="form"
-                onsubmit="createReport(event)"
+          <div class="two">
+
+            <select id="rt">
+              <option>Daily Report</option>
+              <option>Weekly Report</option>
+              <option>Monthly Report</option>
+              <option>Project Report</option>
+              <option>Financial Report</option>
+            </select>
+
+            <input
+              id="rdate"
+              type="date"
+              value="${today()}"
             >
 
-                <div class="two">
+          </div>
 
-                    <select id="rt">
+          <textarea
+            id="rb"
+            rows="7"
+            placeholder="Write report..."
+            required
+          ></textarea>
 
-                        <option>
-                            Daily Report
-                        </option>
+          <button class="btn">
+            Submit Report
+          </button>
 
-                        <option>
-                            Weekly Report
-                        </option>
+        </form>
 
-                        <option>
-                            Monthly Report
-                        </option>
+      </div>
 
-                        <option>
-                            Project Report
-                        </option>
+      <div class="section grid">
 
-                        <option>
-                            Financial Report
-                        </option>
+        ${state.data.reports
+          .map(r => `
+            <div class="card">
 
-                    </select>
+              <span class="tag">
+                ${esc(r.type)}
+              </span>
 
-                    <input
-                        id="rdate"
-                        type="date"
-                        value="${today()}"
-                        required
-                    >
+              <p>
+                ${esc(r.body)}
+              </p>
 
-                </div>
+              <small>
+                ${esc(r.user_name)}
+                · ${esc(r.date)}
+                · ${esc(r.status)}
+              </small>
 
-                <textarea
-                    id="rb"
-                    rows="7"
-                    placeholder="Write report..."
-                    required
-                ></textarea>
+            </div>
+          `)
+          .join('')}
 
-                <button
-                    class="btn"
-                    type="submit"
-                >
-                    Submit Report
-                </button>
-
-            </form>
-
-        </div>
-
-        <div class="section grid">
-
-            ${
-                state.data.reports.length
-                    ? state.data.reports.map(report => `
-                        <div class="card">
-
-                            <span class="tag">
-                                ${esc(report.type)}
-                            </span>
-
-                            <p>
-                                ${esc(report.body)}
-                            </p>
-
-                            <small>
-                                ${esc(
-                                    report.user_name || '-'
-                                )}
-                                ·
-                                ${esc(report.date || '-')}
-                                ·
-                                ${esc(report.status || '-')}
-                            </small>
-
-                        </div>
-                    `).join('')
-                    : empty()
-            }
-
-        </div>
-        `
-    );
+      </div>
+    `
+  );
 }
 
-async function createReport(event) {
-    event.preventDefault();
+async function createReport(e) {
+  e.preventDefault();
 
-    try {
-        await api('/api/reports', {
-            method: 'POST',
-            body: JSON.stringify({
-                type: $('rt').value,
-                body: $('rb').value.trim(),
-                date: $('rdate').value
-            })
-        });
+  try {
+    await api('/api/reports', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: $('rt').value,
+        body: $('rb').value,
+        date: $('rdate').value
+      })
+    });
 
-        await refresh();
+    await refresh();
 
-    } catch (error) {
-        alert(error.message);
-    }
+  } catch (x) {
+    alert(x.message);
+  }
 }
 
-/* ============================================================
+/* =========================
    GOALS
-   ============================================================ */
+========================= */
 
 function goals() {
-    shell(
-        'Goals & Objectives',
-        `
-        <div class="card">
+  shell(
+    'Goals & Objectives',
+    `
+      <div class="card">
 
-            <h2>Create Goal</h2>
+        <form
+          class="form"
+          onsubmit="createGoal(event)"
+        >
 
-            <form
-                class="form"
-                onsubmit="createGoal(event)"
+          <div class="two">
+
+            <input
+              id="gt"
+              placeholder="Goal title"
+              required
             >
 
-                <div class="two">
+            <select id="gs">
+              <option>Department</option>
+              <option>Individual</option>
+              <option>Monthly</option>
+              <option>Yearly</option>
+            </select>
 
-                    <input
-                        id="gt"
-                        placeholder="Goal title"
-                        required
-                    >
+          </div>
 
-                    <select id="gs">
-                        <option value="Department">
-                            Department
-                        </option>
+          <div class="two">
 
-                        <option value="Individual">
-                            Individual
-                        </option>
+            <input
+              id="gperiod"
+              placeholder="Period e.g. Sep 2026"
+            >
 
-                        <option value="Monthly">
-                            Monthly
-                        </option>
+            <input
+              id="gtarget"
+              type="number"
+              min="1"
+              value="100"
+              placeholder="Target"
+            >
 
-                        <option value="Yearly">
-                            Yearly
-                        </option>
-                    </select>
+          </div>
 
-                </div>
+          <button class="btn">
+            Create Goal
+          </button>
 
-                <div class="two">
+        </form>
 
-                    <input
-                        id="gperiod"
-                        placeholder="Period e.g. Sep 2026"
-                    >
+      </div>
 
-                    <input
-                        id="gtarget"
-                        type="number"
-                        min="1"
-                        value="100"
-                        placeholder="Target"
-                        required
-                    >
+      <div class="section grid">
 
-                </div>
+        ${state.goals.map(g => {
 
-                <button class="btn" type="submit">
-                    Create Goal
-                </button>
+          const pct = Math.min(
+            100,
+            Math.round(
+              Number(g.achieved || 0) /
+              Math.max(
+                1,
+                Number(g.target || 0)
+              ) *
+              100
+            )
+          );
 
-            </form>
+          return `
+            <div class="card">
 
-        </div>
+              <b>
+                ${esc(g.title)}
+              </b>
 
-        <div class="section grid">
+              <p>
+                ${esc(g.scope)}
+                ·
+                ${esc(g.period || 'No period')}
+              </p>
 
-            ${
-                state.goals.length
-                    ? state.goals.map(goal => {
+              <div class="progress">
+                <i
+                  style="width:${pct}%"
+                ></i>
+              </div>
 
-                        const achieved =
-                            numberValue(goal.achieved);
+              <div class="row">
 
-                        const target =
-                            Math.max(
-                                1,
-                                numberValue(goal.target)
-                            );
+                <span>
+                  ${Number(g.achieved || 0)}
+                  /
+                  ${Number(g.target || 0)}
+                </span>
 
-                        const percentage =
-                            Math.min(
-                                100,
-                                Math.round(
-                                    achieved /
-                                    target *
-                                    100
-                                )
-                            );
+                <b>
+                  ${pct}%
+                </b>
 
-                        return `
-                            <div class="card">
+              </div>
 
-                                <b>
-                                    ${esc(goal.title)}
-                                </b>
+              <button
+                class="btn light"
+                onclick="updateGoal(
+                  ${g.id},
+                  ${Number(g.achieved || 0)}
+                )"
+              >
+                Update achievement
+              </button>
 
-                                <p>
-                                    ${esc(
-                                        goal.scope || ''
-                                    )}
-                                    ·
-                                    ${esc(
-                                        goal.period ||
-                                        'No period'
-                                    )}
-                                </p>
+            </div>
+          `;
 
-                                <div class="progress">
-                                    <i
-                                        style="width:${percentage}%"
-                                    ></i>
-                                </div>
+        }).join('')}
 
-                                <div class="row">
-                                    <span>
-                                        ${achieved}
-                                        /
-                                        ${target}
-                                    </span>
-
-                                    <b>
-                                        ${percentage}%
-                                    </b>
-                                </div>
-
-                                <button
-                                    class="btn light"
-                                    onclick="updateGoal(
-                                        ${Number(goal.id)},
-                                        ${achieved}
-                                    )"
-                                >
-                                    Update achievement
-                                </button>
-
-                            </div>
-                        `;
-                    }).join('')
-                    : empty()
-            }
-
-        </div>
-        `
-    );
+      </div>
+    `
+  );
 }
 
-async function createGoal(event) {
-    event.preventDefault();
+async function createGoal(e) {
+  e.preventDefault();
 
-    try {
-        await api('/api/goals', {
-            method: 'POST',
-            body: JSON.stringify({
-                title: $('gt').value.trim(),
-                scope: $('gs').value,
-                period: $('gperiod').value.trim(),
-                target: Number(
-                    $('gtarget').value
-                ),
-                achieved: 0,
-                department_id:
-                    state.me.department_id
-            })
-        });
+  try {
+    await api('/api/goals', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: $('gt').value,
+        scope: $('gs').value,
+        period: $('gperiod').value,
+        target: Number(
+          $('gtarget').value
+        ),
+        achieved: 0,
+        department_id:
+          state.me.department_id
+      })
+    });
 
-        await refresh();
+    await refresh();
 
-    } catch (error) {
-        alert(error.message);
-    }
+  } catch (x) {
+    alert(x.message);
+  }
 }
 
 async function updateGoal(id, current) {
-    const value =
-        prompt(
-            'New achieved value:',
-            String(current)
-        );
+  const v = prompt(
+    'New achieved value:',
+    current
+  );
 
-    if (value === null) return;
+  if (v === null) return;
 
-    const achieved = Number(value);
+  const value = Number(v);
 
-    if (!Number.isFinite(achieved) || achieved < 0) {
-        alert('Please enter a valid number.');
-        return;
-    }
+  if (!Number.isFinite(value) || value < 0) {
+    alert('Please enter a valid number.');
+    return;
+  }
 
-    try {
-        await api(`/api/goals/${id}`, {
-            method: 'PATCH',
-            body: JSON.stringify({
-                achieved
-            })
-        });
+  try {
+    await api('/api/goals/' + id, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        achieved: value
+      })
+    });
 
-        await refresh();
+    await refresh();
 
-    } catch (error) {
-        alert(error.message);
-    }
+  } catch (x) {
+    alert(x.message);
+  }
 }
 
-/* ============================================================
+/* =========================
    PERFORMANCE
-   ============================================================ */
+========================= */
 
 function performance() {
-    const data = state.data;
+  const d = state.data;
 
-    const ranking = data.users
-        .filter(user => user.active)
-        .map(user => {
+  const s = d.users
+    .map(u => {
 
-            const tasks =
-                data.tasks.filter(
-                    task =>
-                        Number(task.responsible_user) ===
-                        Number(user.id)
-                );
+      const t = d.tasks.filter(
+        x =>
+          Number(x.responsible_user) ===
+          Number(u.id)
+      );
 
-            const completed =
-                tasks.filter(
-                    task =>
-                        task.status === 'Completed'
-                );
+      const done = t.filter(
+        x => x.status === 'Completed'
+      );
 
-            const delayed =
-                tasks.filter(
-                    task =>
-                        task.status === 'Delayed'
-                );
+      const rejected = t.filter(
+        x => x.status === 'Rejected'
+      );
 
-            const userActivities =
-                state.activities.filter(
-                    activity =>
-                        Number(activity.user_id) ===
-                        Number(user.id)
-                );
+      const a = state.activities.filter(
+        x =>
+          Number(x.user_id) ===
+          Number(u.id)
+      );
 
-            const userReports =
-                data.reports.filter(
-                    report =>
-                        Number(report.user_id) ===
-                        Number(user.id)
-                );
+      const r = d.reports.filter(
+        x =>
+          Number(x.user_id) ===
+          Number(u.id)
+      );
 
-            const taskScore =
-                tasks.length
-                    ? completed.length /
-                      tasks.length *
-                      60
-                    : 0;
+      const taskScore = t.length
+        ? (done.length / t.length) * 60
+        : 0;
 
-            const completedOnTime =
-                completed.filter(task => {
-
-                    if (!task.deadline) {
-                        return true;
-                    }
-
-                    const completedDate =
-                        task.completed_at ||
-                        task.updated_at ||
-                        task.date ||
-                        today();
-
-                    return (
-                        String(completedDate)
-                            .slice(0, 10) <=
-                        String(task.deadline)
-                            .slice(0, 10)
-                    );
-                });
-
-            const timingScore =
-                tasks.length
-                    ? completedOnTime.length /
-                      tasks.length *
-                      20
-                    : 0;
-
-            const activityScore =
-                userActivities.length
-                    ? 10
-                    : 0;
-
-            const reportScore =
-                userReports.length
-                    ? 10
-                    : 0;
-
-            const score = Math.round(
-                Math.min(
-                    100,
-                    taskScore +
-                    timingScore +
-                    activityScore +
-                    reportScore
+      const ontime = t.length
+        ? (
+            done.filter(
+              x =>
+                !x.deadline ||
+                x.deadline >= (
+                  x.completed_at
+                    ? String(x.completed_at).slice(0, 10)
+                    : x.deadline
                 )
-            );
+            ).length /
+            t.length
+          ) * 20
+        : 0;
 
-            return {
-                user,
-                score,
-                delayed: delayed.length
-            };
-        })
-        .sort(
-            (a, b) =>
-                b.score - a.score
-        );
+      const act = a.length
+        ? 10
+        : 0;
 
-    shell(
-        'Performance',
-        `
-        <div class="card">
+      const rep = r.length
+        ? 10
+        : 0;
 
-            <h2>System Data Ranking</h2>
+      return {
+        u,
+        score: Math.round(
+          Math.min(
+            100,
+            taskScore +
+            ontime +
+            act +
+            rep
+          )
+        ),
+        rejected: rejected.length
+      };
 
-            <p class="muted">
-                Performance is calculated from stored
-                task completion, timing, daily activity
-                and report records.
-            </p>
+    })
+    .sort(
+      (a, b) =>
+        b.score - a.score
+    );
 
-            <div class="tablewrap">
+  shell(
+    'Performance',
+    `
+      <div class="card">
 
-                <table class="table">
+        <h2>
+          System Data Ranking
+        </h2>
 
-                    <tr>
-                        <th>#</th>
-                        <th>Person</th>
-                        <th>Department</th>
-                        <th>Score</th>
-                        <th>Delayed</th>
-                    </tr>
+        <p class="muted">
+          Score uses task completion, completion timing, activity and reports.
+        </p>
 
-                    ${
-                        ranking.length
-                            ? ranking.map(
-                                (item, index) => `
-                                    <tr>
+        <div class="tablewrap">
 
-                                        <td>
-                                            ${index + 1}
-                                        </td>
+          <table class="table">
 
-                                        <td>
-                                            ${esc(
-                                                item.user.name
-                                            )}
-                                        </td>
+            <tr>
+              <th>#</th>
+              <th>Person</th>
+              <th>Department</th>
+              <th>Score</th>
+              <th>Rejected</th>
+            </tr>
 
-                                        <td>
-                                            ${esc(
-                                                item.user
-                                                    .department_id
-                                            )}
-                                        </td>
+            ${s.map((x, i) => `
+              <tr>
 
-                                        <td>
-                                            <b>
-                                                ${item.score}%
-                                            </b>
-                                        </td>
+                <td>
+                  ${i + 1}
+                </td>
 
-                                        <td>
-                                            ${item.delayed}
-                                        </td>
+                <td>
+                  ${esc(x.u.name)}
+                </td>
 
-                                    </tr>
-                                `
-                            ).join('')
-                            : `
-                                <tr>
-                                    <td colspan="5">
-                                        ${empty()}
-                                    </td>
-                                </tr>
-                            `
-                    }
+                <td>
+                  ${esc(x.u.department_id)}
+                </td>
 
-                </table>
+                <td>
+                  <b>
+                    ${x.score}%
+                  </b>
+                </td>
 
-            </div>
+                <td>
+                  ${x.rejected}
+                </td>
+
+              </tr>
+            `).join('')}
+
+          </table>
 
         </div>
-        `
-    );
+
+      </div>
+    `
+  );
 }
 
-/* ============================================================
+/* =========================
    FINANCE
-   ============================================================ */
+========================= */
 
 function finance() {
-    if (!canFinance()) {
-        state.page = 'dashboard';
-        return dashboard();
-    }
+  const d = state.data;
 
-    const data = state.data;
+  const inc = d.income.reduce(
+    (a, x) =>
+      a + Number(x.amount || 0),
+    0
+  );
 
-    const income =
-        data.income.reduce(
-            (total, item) =>
-                total + numberValue(item.amount),
-            0
-        );
+  const exp = d.expenses.reduce(
+    (a, x) =>
+      a + Number(x.amount || 0),
+    0
+  );
 
-    const expenses =
-        data.expenses.reduce(
-            (total, item) =>
-                total + numberValue(item.amount),
-            0
-        );
+  shell(
+    'Finance',
+    `
+      <div class="grid">
 
-    shell(
-        'Finance',
-        `
-        <div class="grid">
+        ${card(
+          'Total Income',
+          money(inc)
+        )}
 
-            ${card(
-                'Total Income',
-                money(income)
-            )}
+        ${card(
+          'Total Expenses',
+          money(exp)
+        )}
 
-            ${card(
-                'Total Expenses',
-                money(expenses)
-            )}
+        ${card(
+          'Net Result',
+          money(inc - exp)
+        )}
 
-            ${card(
-                'Net Result',
-                money(income - expenses)
-            )}
+        ${card(
+          'Pending Changes',
+          d.changes.length
+        )}
 
-            ${card(
-                'Pending Changes',
-                data.changes.length
-            )}
+      </div>
 
-        </div>
+      <div class="section card">
 
-        <div class="section card">
+        <h2>
+          Add Expense
+        </h2>
 
-            <h2>Add Expense</h2>
+        <form
+          class="form"
+          onsubmit="addExpense(event)"
+        >
 
-            <form
-                class="form"
-                onsubmit="addExpense(event)"
+          <div class="two">
+
+            <input
+              id="edate"
+              type="date"
+              value="${today()}"
+              required
             >
 
-                <div class="two">
+            <input
+              id="eamount"
+              type="number"
+              min="0.01"
+              step="0.01"
+              placeholder="Amount (RWF)"
+              required
+            >
 
-                    <input
-                        id="edate"
-                        type="date"
-                        value="${today()}"
-                        required
-                    >
+          </div>
 
-                    <input
-                        id="eamount"
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        placeholder="Amount (RWF)"
-                        required
-                    >
+          <div class="two">
 
-                </div>
+            <select id="etype">
+              <option>Fuel</option>
+              <option>Maintenance</option>
+              <option>Repairs</option>
+              <option>Salary / Commission</option>
+              <option>Other</option>
+            </select>
 
-                <div class="two">
+            <select id="emoto">
 
-                    <select id="etype">
+              <option value="">
+                Company expense / no motorcycle
+              </option>
 
-                        <option value="Fuel">
-                            Fuel
-                        </option>
+              ${d.motorcycles.map(m => `
+                <option value="${m.id}">
+                  ${esc(m.code)}
+                  —
+                  ${esc(m.plate || '')}
+                </option>
+              `).join('')}
 
-                        <option value="Maintenance">
-                            Maintenance
-                        </option>
+            </select>
 
-                        <option value="Repairs">
-                            Repairs
-                        </option>
+          </div>
 
-                        <option value="Salary / Commission">
-                            Salary / Commission
-                        </option>
+          <input
+            id="edesc"
+            placeholder="Description"
+          >
 
-                        <option value="Other">
-                            Other
-                        </option>
+          <button class="btn">
+            Save Expense
+          </button>
 
-                    </select>
+        </form>
 
-                    <select id="emoto">
+      </div>
 
-                        <option value="">
-                            Company expense /
-                            no motorcycle
-                        </option>
+      ${
+        state.me.department_id === 'D1'
+          ? `
+            <div class="section card">
 
-                        ${
-                            data.motorcycles.map(
-                                motorcycle => `
-                                    <option
-                                        value="${Number(
-                                            motorcycle.id
-                                        )}"
-                                    >
-                                        ${esc(
-                                            motorcycle.code
-                                        )}
-                                        —
-                                        ${esc(
-                                            motorcycle.plate ||
-                                            ''
-                                        )}
-                                    </option>
-                                `
-                            ).join('')
-                        }
+              <h2>
+                Pending Finance Changes
+              </h2>
 
-                    </select>
+              ${
+                d.changes.length
+                  ? d.changes.map(c => `
+                    <div class="change">
 
-                </div>
+                      <b>
+                        ${esc(c.record_type)}
+                        #${c.record_id}
+                      </b>
 
-                <input
-                    id="edesc"
-                    placeholder="Description"
-                >
+                      <p>
+                        ${esc(c.reason || '')}
+                      </p>
 
-                <button
-                    class="btn"
-                    type="submit"
-                >
-                    Save Expense
-                </button>
+                      <button
+                        class="btn"
+                        onclick="decision(
+                          ${c.id},
+                          'Approved'
+                        )"
+                      >
+                        Approve
+                      </button>
 
-            </form>
-
-        </div>
-
-        ${
-            isD1()
-                ? `
-                    <div class="section card">
-
-                        <h2>
-                            Pending Finance Changes
-                        </h2>
-
-                        ${
-                            data.changes.length
-                                ? data.changes.map(
-                                    change => `
-                                        <div class="change">
-
-                                            <b>
-                                                ${esc(
-                                                    change.record_type
-                                                )}
-                                                #
-                                                ${esc(
-                                                    change.record_id
-                                                )}
-                                            </b>
-
-                                            <p>
-                                                ${esc(
-                                                    change.reason
-                                                )}
-                                            </p>
-
-                                            <button
-                                                class="btn"
-                                                onclick="decision(
-                                                    ${Number(
-                                                        change.id
-                                                    )},
-                                                    'Approved'
-                                                )"
-                                            >
-                                                Approve
-                                            </button>
-
-                                            <button
-                                                class="btn danger"
-                                                onclick="decision(
-                                                    ${Number(
-                                                        change.id
-                                                    )},
-                                                    'Rejected'
-                                                )"
-                                            >
-                                                Reject
-                                            </button>
-
-                                        </div>
-                                    `
-                                ).join('')
-                                : empty(
-                                    'No pending finance changes.'
-                                )
-                        }
+                      <button
+                        class="btn danger"
+                        onclick="decision(
+                          ${c.id},
+                          'Rejected'
+                        )"
+                      >
+                        Reject
+                      </button>
 
                     </div>
-                `
-                : ''
-        }
+                  `).join('')
+                  : `
+                    <p class="muted">
+                      No pending changes.
+                    </p>
+                  `
+              }
 
-        <div class="section card tablewrap">
+            </div>
+          `
+          : ''
+      }
 
-            <h2>Expenses</h2>
+      <div class="section card tablewrap">
 
-            <table class="table">
+        <table class="table">
 
-                <tr>
-                    <th>Date</th>
-                    <th>Type</th>
-                    <th>Moto</th>
-                    <th>Amount</th>
-                    <th>By</th>
-                </tr>
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Moto</th>
+            <th>Amount</th>
+            <th>By</th>
+          </tr>
 
-                ${
-                    data.expenses.length
-                        ? data.expenses.map(
-                            expense => `
-                                <tr>
+          ${d.expenses.map(x => `
+            <tr>
 
-                                    <td>
-                                        ${esc(
-                                            expense.date ||
-                                            '-'
-                                        )}
-                                    </td>
+              <td>
+                ${esc(x.date)}
+              </td>
 
-                                    <td>
-                                        ${esc(
-                                            expense.expense_type ||
-                                            '-'
-                                        )}
-                                    </td>
+              <td>
+                ${esc(x.expense_type)}
+              </td>
 
-                                    <td>
-                                        ${esc(
-                                            expense.motorcycle_code ||
-                                            '-'
-                                        )}
-                                    </td>
+              <td>
+                ${esc(x.motorcycle_code || '-')}
+              </td>
 
-                                    <td>
-                                        ${money(
-                                            expense.amount
-                                        )}
-                                    </td>
+              <td>
+                ${money(x.amount)}
+              </td>
 
-                                    <td>
-                                        ${esc(
-                                            expense.entered_by_name ||
-                                            expense.entered_name ||
-                                            '-'
-                                        )}
-                                    </td>
+              <td>
+                ${esc(
+                  x.entered_by_name ||
+                  x.entered_name ||
+                  '-'
+                )}
+              </td>
 
-                                </tr>
-                            `
-                        ).join('')
-                        : `
-                            <tr>
-                                <td colspan="5">
-                                    ${empty()}
-                                </td>
-                            </tr>
-                        `
-                }
+            </tr>
+          `).join('')}
 
-            </table>
+        </table>
 
-        </div>
-        `
-    );
+      </div>
+    `
+  );
 }
 
-async function addExpense(event) {
-    event.preventDefault();
+async function addExpense(e) {
+  e.preventDefault();
 
-    try {
-        await api('/api/expenses', {
-            method: 'POST',
-            body: JSON.stringify({
-                date: $('edate').value,
-                motorcycle_id:
-                    $('emoto').value
-                        ? Number($('emoto').value)
-                        : null,
-                expense_type:
-                    $('etype').value,
-                amount:
-                    Number($('eamount').value),
-                description:
-                    $('edesc').value.trim()
-            })
-        });
+  try {
+    await api('/api/expenses', {
+      method: 'POST',
+      body: JSON.stringify({
+        date: $('edate').value,
+        motorcycle_id:
+          $('emoto').value
+            ? Number($('emoto').value)
+            : null,
+        expense_type: $('etype').value,
+        amount: Number(
+          $('eamount').value
+        ),
+        description:
+          $('edesc').value
+      })
+    });
 
-        await refresh();
+    await refresh();
 
-    } catch (error) {
-        alert(error.message);
-    }
+  } catch (x) {
+    alert(x.message);
+  }
 }
 
 async function decision(id, decisionValue) {
-    let note =
-        prompt(
-            'Decision note:'
-        );
+  const note = prompt(
+    'Decision note:'
+  ) || '';
 
-    if (note === null) {
-        return;
-    }
+  try {
+    await api(
+      '/api/finance-changes/' +
+      id +
+      '/decision',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          decision: decisionValue,
+          decision_note: note
+        })
+      }
+    );
 
-    note = note.trim();
+    await refresh();
 
-    if (
-        decisionValue === 'Rejected' &&
-        !note
-    ) {
-        alert(
-            'A decision note is required when rejecting.'
-        );
-        return;
-    }
-
-    try {
-        await api(
-            `/api/finance-changes/${id}/decision`,
-            {
-                method: 'POST',
-                body: JSON.stringify({
-                    decision: decisionValue,
-                    note
-                })
-            }
-        );
-
-        await refresh();
-
-    } catch (error) {
-        alert(error.message);
-    }
+  } catch (x) {
+    alert(x.message);
+  }
 }
 
-/* ============================================================
+/* =========================
    FLEET
-   ============================================================ */
+========================= */
 
 function fleet() {
-    if (!canFleet()) {
-        state.page = 'dashboard';
-        return dashboard();
-    }
-
-    const data = state.data;
-    const summary = state.fleet || {};
-
-    const total =
-        summary.totalMotorcycles ??
-        summary.total ??
-        data.motorcycles.length;
-
-    const active =
-        summary.active ??
-        data.motorcycles.filter(
-            motorcycle =>
-                motorcycle.status === 'Active'
-        ).length;
-
-    const maintenance =
-        summary.maintenance ??
-        data.motorcycles.filter(
-            motorcycle =>
-                motorcycle.status === 'Maintenance'
-        ).length;
-
-    const todayIncome =
-        summary.todayIncome ??
-        summary.today_income ??
-        0;
-
-    const todayExpenses =
-        summary.todayExpenses ??
-        summary.today_expenses ??
-        0;
-
-    const todayNet =
-        summary.todayNet ??
-        summary.today_net ??
-        todayIncome - todayExpenses;
-
-    const fleetNet =
-        summary.net ??
-        summary.fleetNet ??
-        summary.fleet_net ??
-        0;
-
-    shell(
-        'Motorcycle Fleet',
-        `
-        <div class="grid">
-
-            ${card('Total', total)}
-
-            ${card('Active', active)}
-
-            ${card(
-                'Maintenance',
-                maintenance
-            )}
-
-            ${card(
-                "Today's Income",
-                money(todayIncome)
-            )}
-
-            ${card(
-                "Today's Expenses",
-                money(todayExpenses)
-            )}
-
-            ${card(
-                "Today's Net",
-                money(todayNet)
-            )}
-
-            ${card(
-                'Fleet Net',
-                money(fleetNet)
-            )}
-
-        </div>
-
-        <div class="section grid2">
-
-            ${
-                canFleetOperations()
-                    ? `
-                        <div class="card">
-
-                            <h2>
-                                Register Motorcycle
-                            </h2>
-
-                            <form
-                                class="form"
-                                onsubmit="addMoto(event)"
-                            >
-
-                                <input
-                                    id="mcode"
-                                    placeholder="Motorcycle ID / Number"
-                                    required
-                                >
-
-                                <input
-                                    id="mplate"
-                                    placeholder="Plate Number"
-                                >
-
-                                <input
-                                    id="mmodel"
-                                    placeholder="Model"
-                                >
-
-                                <div class="two">
-
-                                    <input
-                                        id="mpdate"
-                                        type="date"
-                                    >
-
-                                    <input
-                                        id="mprice"
-                                        type="number"
-                                        min="0"
-                                        placeholder="Purchase Price"
-                                    >
-
-                                </div>
-
-                                <button
-                                    class="btn"
-                                    type="submit"
-                                >
-                                    Register
-                                </button>
-
-                            </form>
-
-                        </div>
-                    `
-                    : ''
-            }
-
-            ${
-                canFleetOperations()
-                    ? `
-                        <div class="card">
-
-                            <h2>Daily Closing</h2>
-
-                            <form
-                                class="form"
-                                onsubmit="closeDay(event)"
-                            >
-
-                                <input
-                                    id="cdate"
-                                    type="date"
-                                    value="${today()}"
-                                    required
-                                >
-
-                                <textarea
-                                    id="cnotes"
-                                    placeholder="Closing notes"
-                                ></textarea>
-
-                                <button
-                                    class="btn"
-                                    type="submit"
-                                >
-                                    Close Day
-                                </button>
-
-                            </form>
-
-                        </div>
-                    `
-                    : ''
-            }
-
-        </div>
-
-        <div class="section card tablewrap">
-
-            <h2>Motorcycles</h2>
-
-            <table class="table">
-
-                <tr>
-                    <th>Moto</th>
-                    <th>Plate</th>
-                    <th>Model</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                </tr>
-
-                ${
-                    data.motorcycles.length
-                        ? data.motorcycles.map(
-                            motorcycle => `
-                                <tr>
-
-                                    <td>
-                                        <b>
-                                            ${esc(
-                                                motorcycle.code
-                                            )}
-                                        </b>
-                                    </td>
-
-                                    <td>
-                                        ${esc(
-                                            motorcycle.plate ||
-                                            '-'
-                                        )}
-                                    </td>
-
-                                    <td>
-                                        ${esc(
-                                            motorcycle.model ||
-                                            '-'
-                                        )}
-                                    </td>
-
-                                    <td>
-                                        ${esc(
-                                            motorcycle.status ||
-                                            '-'
-                                        )}
-                                    </td>
-
-                                    <td>
-
-                                        <button
-                                            class="btn light"
-                                            onclick="viewMoto(
-                                                ${Number(
-                                                    motorcycle.id
-                                                )}
-                                            )"
-                                        >
-                                            History
-                                        </button>
-
-                                        ${
-                                            canFleetOperations()
-                                                ? `
-                                                    <button
-                                                        class="btn light"
-                                                        onclick="addIncome(
-                                                            ${Number(
-                                                                motorcycle.id
-                                                            )}
-                                                        )"
-                                                    >
-                                                        Income
-                                                    </button>
-                                                `
-                                                : ''
-                                        }
-
-                                    </td>
-
-                                </tr>
-                            `
-                        ).join('')
-                        : `
-                            <tr>
-                                <td colspan="5">
-                                    ${empty(
-                                        'No motorcycles registered.'
-                                    )}
-                                </td>
-                            </tr>
-                        `
-                }
-
-            </table>
-
-        </div>
-
-        ${
-            canFleetOperations()
-                ? `
-                    <div class="section card">
-
-                        <h2>
-                            Odometer / Mileage
-                        </h2>
-
-                        <form
-                            class="form"
-                            onsubmit="addOdometer(event)"
-                        >
-
-                            <div class="two">
-
-                                <select id="om">
-                                    ${
-                                        data.motorcycles.map(
-                                            motorcycle => `
-                                                <option
-                                                    value="${Number(
-                                                        motorcycle.id
-                                                    )}"
-                                                >
-                                                    ${esc(
-                                                        motorcycle.code
-                                                    )}
-                                                </option>
-                                            `
-                                        ).join('')
-                                    }
-                                </select>
-
-                                <input
-                                    id="odate"
-                                    type="date"
-                                    value="${today()}"
-                                    required
-                                >
-
-                            </div>
-
-                            <input
-                                id="omile"
-                                type="number"
-                                min="0"
-                                step="0.1"
-                                placeholder="Current mileage"
-                                required
-                            >
-
-                            <button
-                                class="btn"
-                                type="submit"
-                            >
-                                Save Mileage
-                            </button>
-
-                        </form>
-
-                    </div>
-                `
-                : ''
-        }
-
-        ${
-            canFleetOperations()
-                ? `
-                    <div class="section grid2">
-
-                        <div class="card">
-
-                            <h2>
-                                Rider Assignment
-                            </h2>
-
-                            <form
-                                class="form"
-                                onsubmit="assignRider(event)"
-                            >
-
-                                <select id="am">
-                                    ${
-                                        data.motorcycles.map(
-                                            motorcycle => `
-                                                <option
-                                                    value="${Number(
-                                                        motorcycle.id
-                                                    )}"
-                                                >
-                                                    ${esc(
-                                                        motorcycle.code
-                                                    )}
-                                                </option>
-                                            `
-                                        ).join('')
-                                    }
-                                </select>
-
-                                <input
-                                    id="ar"
-                                    placeholder="Rider / worker name"
-                                    required
-                                >
-
-                                <input
-                                    id="as"
-                                    type="date"
-                                    value="${today()}"
-                                    required
-                                >
-
-                                <input
-                                    id="an"
-                                    placeholder="Notes"
-                                >
-
-                                <button
-                                    class="btn"
-                                    type="submit"
-                                >
-                                    Assign
-                                </button>
-
-                            </form>
-
-                        </div>
-
-                        <div class="card">
-
-                            <h2>Maintenance</h2>
-
-                            <form
-                                class="form"
-                                onsubmit="addMaintenance(event)"
-                            >
-
-                                <select id="mm">
-                                    ${
-                                        data.motorcycles.map(
-                                            motorcycle => `
-                                                <option
-                                                    value="${Number(
-                                                        motorcycle.id
-                                                    )}"
-                                                >
-                                                    ${esc(
-                                                        motorcycle.code
-                                                    )}
-                                                </option>
-                                            `
-                                        ).join('')
-                                    }
-                                </select>
-
-                                <input
-                                    id="mi"
-                                    placeholder="Problem / issue"
-                                    required
-                                >
-
-                                <div class="two">
-
-                                    <input
-                                        id="md"
-                                        type="date"
-                                        value="${today()}"
-                                        required
-                                    >
-
-                                    <input
-                                        id="mileage"
-                                        type="number"
-                                        min="0"
-                                        placeholder="Mileage"
-                                    >
-
-                                </div>
-
-                                <input
-                                    id="mparts"
-                                    placeholder="Parts used"
-                                >
-
-                                <div class="two">
-
-                                    <input
-                                        id="mcost"
-                                        type="number"
-                                        min="0"
-                                        placeholder="Cost"
-                                    >
-
-                                    <input
-                                        id="mgarage"
-                                        placeholder="Garage / mechanic"
-                                    >
-
-                                </div>
-
-                                <div class="two">
-
-                                    <input
-                                        id="mnext"
-                                        type="date"
-                                    >
-
-                                    <input
-                                        id="mdown"
-                                        type="number"
-                                        min="0"
-                                        placeholder="Downtime (hours)"
-                                    >
-
-                                </div>
-
-                                <select id="mstatus">
-
-                                    <option value="Completed">
-                                        Completed
-                                    </option>
-
-                                    <option value="In Progress">
-                                        In Progress
-                                    </option>
-
-                                </select>
-
-                                <button
-                                    class="btn"
-                                    type="submit"
-                                >
-                                    Save Maintenance
-                                </button>
-
-                            </form>
-
-                        </div>
-
-                    </div>
-                `
-                : ''
-        }
-
-        <div class="section card tablewrap">
-
-            <h2>Recent Income</h2>
-
-            <table class="table">
-
-                <tr>
-                    <th>Date</th>
-                    <th>Moto</th>
-                    <th>Amount</th>
-                    <th>Entered by</th>
-                    <th>Verified</th>
-                </tr>
-
-                ${
-                    data.income.length
-                        ? data.income
-                            .slice(0, 50)
-                            .map(
-                                income => `
-                                    <tr>
-
-                                        <td>
-                                            ${esc(
-                                                income.date ||
-                                                '-'
-                                            )}
-                                        </td>
-
-                                        <td>
-                                            ${esc(
-                                                income.motorcycle_code ||
-                                                '-'
-                                            )}
-                                        </td>
-
-                                        <td>
-                                            ${money(
-                                                income.amount
-                                            )}
-                                        </td>
-
-                                        <td>
-                                            ${esc(
-                                                income.entered_by_name ||
-                                                income.entered_name ||
-                                                '-'
-                                            )}
-                                        </td>
-
-                                        <td>
-
-                                            ${
-                                                income.verified
-                                                    ? 'Verified'
-                                                    : (
-                                                        isD1() ||
-                                                        isD3()
-                                                    )
-                                                        ? `
-                                                            <button
-                                                                class="btn light"
-                                                                onclick="verifyIncome(
-                                                                    ${Number(
-                                                                        income.id
-                                                                    )}
-                                                                )"
-                                                            >
-                                                                Verify
-                                                            </button>
-                                                        `
-                                                        : 'Pending'
-                                            }
-
-                                        </td>
-
-                                    </tr>
-                                `
-                            )
-                            .join('')
-                        : `
-                            <tr>
-                                <td colspan="5">
-                                    ${empty()}
-                                </td>
-                            </tr>
-                        `
-                }
-
-            </table>
-
-        </div>
-        `
+  const d = state.data;
+
+  const fleetSummary =
+    state.fleet || {};
+
+  const total =
+    d.motorcycles.length;
+
+  const active =
+    d.motorcycles.filter(
+      m => m.status === 'Active'
+    ).length;
+
+  const maintenanceCount =
+    d.motorcycles.filter(
+      m =>
+        String(m.status || '')
+          .toLowerCase()
+          .includes('maintenance')
+    ).length;
+
+  const todayIncome =
+    d.income
+      .filter(x => x.date === today())
+      .reduce(
+        (a, x) =>
+          a + Number(x.amount || 0),
+        0
+      );
+
+  const todayExpenses =
+    d.expenses
+      .filter(x => x.date === today())
+      .reduce(
+        (a, x) =>
+          a + Number(x.amount || 0),
+        0
+      );
+
+  const todayNet =
+    todayIncome - todayExpenses;
+
+  const fleetIncome =
+    Number(
+      fleetSummary.income ??
+      d.income.reduce(
+        (a, x) =>
+          a + Number(x.amount || 0),
+        0
+      )
     );
-}
 
-/* ============================================================
-   FLEET ACTIONS
-   ============================================================ */
+  const fleetExpenses =
+    Number(
+      fleetSummary.expenses ??
+      d.expenses.reduce(
+        (a, x) =>
+          a + Number(x.amount || 0),
+        0
+      )
+    );
 
-async function addMoto(event) {
-    event.preventDefault();
+  const fleetNet =
+    Number(
+      fleetSummary.net ??
+      (fleetIncome - fleetExpenses)
+    );
 
-    if (!canFleetOperations()) {
-        alert('You do not have permission.');
-        return;
-    }
+  shell(
+    'Motorcycle Fleet',
+    `
+      <div class="grid">
 
-    try {
-        await api('/api/motorcycles', {
-            method: 'POST',
-            body: JSON.stringify({
-                code:
-                    $('mcode').value.trim(),
-                plate:
-                    $('mplate').value.trim(),
-                model:
-                    $('mmodel').value.trim(),
-                purchase_price:
-                    Number(
-                        $('mprice').value || 0
-                    ),
-                purchase_date:
-                    $('mpdate').value || null,
-                status: 'Active'
-            })
-        });
+        ${card(
+          'Total',
+          total
+        )}
 
-        await refresh();
+        ${card(
+          'Active',
+          active
+        )}
 
-    } catch (error) {
-        alert(error.message);
-    }
-}
+        ${card(
+          'Maintenance',
+          maintenanceCount
+        )}
 
-async function verifyIncome(id) {
-    if (!(isD1() || isD3())) {
-        alert(
-            'Only D1 and D3 can verify income.'
-        );
-        return;
-    }
+        ${card(
+          "Today's Income",
+          money(todayIncome)
+        )}
 
-    try {
-        await api(
-            `/api/income/${id}/verify`,
-            {
-                method: 'POST',
-                body: JSON.stringify({
-                    reason:
-                        'Finance verification'
-                })
-            }
-        );
+        ${card(
+          "Today's Expenses",
+          money(todayExpenses)
+        )}
 
-        await refresh();
+        ${card(
+          "Today's Net",
+          money(todayNet)
+        )}
 
-    } catch (error) {
-        alert(error.message);
-    }
-}
+        ${card(
+          'Fleet Net',
+          money(fleetNet)
+        )}
 
-async function addIncome(id) {
-    if (!canFleetOperations()) {
-        alert(
-            'Only D1 and D4 can enter motorcycle income.'
-        );
-        return;
-    }
+      </div>
 
-    const amount =
-        prompt(
-            'Daily income (RWF):'
-        );
+      <div class="section grid2">
 
-    if (amount === null) return;
-
-    const numericAmount =
-        Number(amount);
-
-    if (
-        !Number.isFinite(numericAmount) ||
-        numericAmount <= 0
-    ) {
-        alert(
-            'Enter a valid positive amount.'
-        );
-        return;
-    }
-
-    const note =
-        prompt(
-            'Collection note (optional):'
-        ) || '';
-
-    try {
-        await api('/api/income', {
-            method: 'POST',
-            body: JSON.stringify({
-                date: today(),
-                motorcycle_id: Number(id),
-                amount: numericAmount,
-                collection_note:
-                    note.trim()
-            })
-        });
-
-        await refresh();
-
-    } catch (error) {
-        alert(error.message);
-    }
-}
-
-async function assignRider(event) {
-    event.preventDefault();
-
-    if (!canFleetOperations()) {
-        alert('You do not have permission.');
-        return;
-    }
-
-    try {
-        await api('/api/assignments', {
-            method: 'POST',
-            body: JSON.stringify({
-                motorcycle_id:
-                    Number($('am').value),
-                rider_name:
-                    $('ar').value.trim(),
-                start_date:
-                    $('as').value,
-                notes:
-                    $('an').value.trim()
-            })
-        });
-
-        await refresh();
-
-    } catch (error) {
-        alert(error.message);
-    }
-}
-
-async function addOdometer(event) {
-    event.preventDefault();
-
-    if (!canFleetOperations()) {
-        alert('You do not have permission.');
-        return;
-    }
-
-    try {
-        await api('/api/odometer', {
-            method: 'POST',
-            body: JSON.stringify({
-                motorcycle_id:
-                    Number($('om').value),
-                date:
-                    $('odate').value,
-                mileage:
-                    Number($('omile').value)
-            })
-        });
-
-        await refresh();
-
-    } catch (error) {
-        alert(error.message);
-    }
-}
-
-async function addMaintenance(event) {
-    event.preventDefault();
-
-    if (!canFleetOperations()) {
-        alert('You do not have permission.');
-        return;
-    }
-
-    try {
-        await api('/api/maintenance', {
-            method: 'POST',
-            body: JSON.stringify({
-                motorcycle_id:
-                    Number($('mm').value),
-                issue:
-                    $('mi').value.trim(),
-                date:
-                    $('md').value,
-                mileage:
-                    $('mileage').value
-                        ? Number(
-                            $('mileage').value
-                        )
-                        : null,
-                parts:
-                    $('mparts').value.trim(),
-                cost:
-                    Number(
-                        $('mcost').value || 0
-                    ),
-                garage:
-                    $('mgarage').value.trim(),
-                next_service:
-                    $('mnext').value || null,
-                downtime:
-                    Number(
-                        $('mdown').value || 0
-                    ),
-                status:
-                    $('mstatus').value
-            })
-        });
-
-        await refresh();
-
-    } catch (error) {
-        alert(error.message);
-    }
-}
-
-async function closeDay(event) {
-    event.preventDefault();
-
-    if (!canFleetOperations()) {
-        alert('You do not have permission.');
-        return;
-    }
-
-    try {
-        const response =
-            await api('/api/daily-closing', {
-                method: 'POST',
-                body: JSON.stringify({
-                    date:
-                        $('cdate').value,
-                    notes:
-                        $('cnotes').value.trim()
-                })
-            });
-
-        const closing =
-            response.dailyClosing ||
-            response.closing ||
-            response;
-
-        const closingDate =
-            closing.date ||
-            $('cdate').value;
-
-        const net =
-            closing.net ??
-            closing.todayNet ??
-            0;
-
-        alert(
-            `Closed ${closingDate}: ${money(net)}`
-        );
-
-        await refresh();
-
-    } catch (error) {
-        alert(error.message);
-    }
-}
-
-async function viewMoto(id) {
-    try {
-        const response =
-            await api(
-                `/api/fleet-detail/${id}`
-            );
-
-        const detail =
-            response.fleetDetail ||
-            response;
-
-        const motorcycle =
-            detail.motorcycle ||
-            {};
-
-        const income =
-            detail.income ||
-            [];
-
-        const expenses =
-            detail.expenses ||
-            [];
-
-        const maintenance =
-            detail.maintenance ||
-            [];
-
-        const odometer =
-            detail.odometer ||
-            [];
-
-        const assignments =
-            detail.assignments ||
-            [];
-
-        const text = [
-            `MOTORCYCLE ${
-                motorcycle.code || '-'
-            }`,
-            `Status: ${
-                motorcycle.status || '-'
-            }`,
-            `Income records: ${
-                income.length
-            }`,
-            `Expense records: ${
-                expenses.length
-            }`,
-            `Maintenance records: ${
-                maintenance.length
-            }`,
-            `Odometer records: ${
-                odometer.length
-            }`,
-            `Assignments: ${
-                assignments.length
-            }`
-        ].join('\n');
-
-        alert(text);
-
-    } catch (error) {
-        alert(error.message);
-    }
-}
-
-/* ============================================================
-   EVIDENCE
-   ============================================================ */
-
-function evidence() {
-    shell(
-        'Evidence',
-        `
         <div class="card">
 
-            <h2>Upload Evidence</h2>
+          <h2>
+            Register Motorcycle
+          </h2>
 
-            <form
-                class="form"
-                onsubmit="uploadEvidence(event)"
+          <form
+            class="form"
+            onsubmit="addMoto(event)"
+          >
+
+            <input
+              id="mcode"
+              placeholder="Motorcycle ID / Number"
+              required
             >
 
-                <input
-                    id="efile"
-                    type="file"
-                    required
-                >
+            <input
+              id="mplate"
+              placeholder="Plate Number"
+            >
 
-                <select id="etask">
+            <input
+              id="mmodel"
+              placeholder="Model"
+            >
 
-                    <option value="">
-                        No task link
-                    </option>
+            <div class="two">
 
-                    ${
-                        state.data.tasks.map(
-                            task => `
-                                <option
-                                    value="${Number(task.id)}"
-                                >
-                                    ${esc(task.name)}
-                                </option>
-                            `
-                        ).join('')
-                    }
+              <input
+                id="mpdate"
+                type="date"
+              >
 
-                </select>
+              <input
+                id="mprice"
+                type="number"
+                min="0"
+                placeholder="Purchase Price"
+              >
 
-                <button
-                    class="btn"
-                    type="submit"
-                >
-                    Upload
-                </button>
+            </div>
 
-            </form>
+            <button class="btn">
+              Register
+            </button>
+
+          </form>
 
         </div>
 
-        <div class="section grid">
-
-            ${
-                state.evidence.length
-                    ? state.evidence.map(
-                        item => `
-                            <div class="card">
-
-                                <b>
-                                    ${esc(
-                                        item.original_name ||
-                                        item.filename ||
-                                        'Evidence'
-                                    )}
-                                </b>
-
-                                <p>
-                                    ${esc(
-                                        item.uploaded_at ||
-                                        '-'
-                                    )}
-                                </p>
-
-                                <button
-                                    class="btn light"
-                                    onclick="openEvidence(
-                                        ${Number(item.id)}
-                                    )"
-                                >
-                                    Open
-                                </button>
-
-                            </div>
-                        `
-                    ).join('')
-                    : empty(
-                        'No evidence uploaded yet.'
-                    )
-            }
-
-        </div>
-        `
-    );
-}
-
-async function uploadEvidence(event) {
-    event.preventDefault();
-
-    const file =
-        $('efile')?.files?.[0];
-
-    if (!file) {
-        alert('Please select a file.');
-        return;
-    }
-
-    const formData =
-        new FormData();
-
-    formData.append(
-        'file',
-        file
-    );
-
-    if ($('etask').value) {
-        formData.append(
-            'task_id',
-            $('etask').value
-        );
-    }
-
-    try {
-        await api('/api/evidence', {
-            method: 'POST',
-            body: formData
-        });
-
-        await refresh();
-
-    } catch (error) {
-        alert(error.message);
-    }
-}
-
-async function openEvidence(id) {
-    try {
-        const response =
-            await fetch(
-                `/api/evidence/${id}/file`,
-                {
-                    credentials: 'include'
-                }
-            );
-
-        if (!response.ok) {
-            const body =
-                await response.json()
-                    .catch(() => ({}));
-
-            throw new Error(
-                body.error ||
-                'Unable to open evidence.'
-            );
-        }
-
-        const blob =
-            await response.blob();
-
-        const url =
-            URL.createObjectURL(blob);
-
-        window.open(
-            url,
-            '_blank',
-            'noopener'
-        );
-
-        setTimeout(
-            () => URL.revokeObjectURL(url),
-            60000
-        );
-
-    } catch (error) {
-        alert(error.message);
-    }
-}
-
-/* ============================================================
-   AUDIT
-   ============================================================ */
-
-function audit() {
-    if (!canAudit()) {
-        state.page = 'dashboard';
-        return dashboard();
-    }
-
-    shell(
-        'Audit Trail',
-        `
         <div class="card">
 
-            <div class="row">
+          <h2>
+            Daily Closing
+          </h2>
 
-                <h2>Audit Trail</h2>
+          <form
+            class="form"
+            onsubmit="closeDay(event)"
+          >
 
-                ${refreshButton()}
+            <input
+              id="cdate"
+              type="date"
+              value="${today()}"
+            >
+
+            <textarea
+              id="cnotes"
+              placeholder="Closing notes"
+            ></textarea>
+
+            <button class="btn">
+              Close Day
+            </button>
+
+          </form>
+
+        </div>
+
+      </div>
+
+      <div class="section card tablewrap">
+
+        <h2>
+          Motorcycles
+        </h2>
+
+        <table class="table">
+
+          <tr>
+            <th>Moto</th>
+            <th>Plate</th>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+
+          ${d.motorcycles.map(m => `
+            <tr>
+
+              <td>
+                <b>
+                  ${esc(m.code)}
+                </b>
+              </td>
+
+              <td>
+                ${esc(m.plate || '-')}
+              </td>
+
+              <td>
+                ${esc(m.model || '-')}
+              </td>
+
+              <td>
+                ${esc(m.status || '-')}
+              </td>
+
+              <td>
+
+                <button
+                  class="btn light"
+                  onclick="viewMoto(${m.id})"
+                >
+                  History
+                </button>
+
+                ${
+                  state.me.department_id === 'D4' ||
+                  state.me.department_id === 'D1'
+                    ? `
+                      <button
+                        class="btn light"
+                        onclick="addIncome(${m.id})"
+                      >
+                        Income
+                      </button>
+                    `
+                    : ''
+                }
+
+              </td>
+
+            </tr>
+          `).join('')}
+
+        </table>
+
+      </div>
+
+      <div class="section card">
+
+        <h2>
+          Odometer / Mileage
+        </h2>
+
+        <form
+          class="form"
+          onsubmit="addOdometer(event)"
+        >
+
+          <div class="two">
+
+            <select id="om">
+
+              ${d.motorcycles.map(m => `
+                <option value="${m.id}">
+                  ${esc(m.code)}
+                </option>
+              `).join('')}
+
+            </select>
+
+            <input
+              id="odate"
+              type="date"
+              value="${today()}"
+              required
+            >
+
+          </div>
+
+          <input
+            id="omile"
+            type="number"
+            min="0"
+            step="0.1"
+            placeholder="Current mileage"
+            required
+          >
+
+          <button class="btn">
+            Save Mileage
+          </button>
+
+        </form>
+
+      </div>
+
+      <div class="section grid2">
+
+        <div class="card">
+
+          <h2>
+            Rider Assignment
+          </h2>
+
+          <form
+            class="form"
+            onsubmit="assignRider(event)"
+          >
+
+            <select id="am">
+
+              ${d.motorcycles.map(m => `
+                <option value="${m.id}">
+                  ${esc(m.code)}
+                </option>
+              `).join('')}
+
+            </select>
+
+            <input
+              id="ar"
+              placeholder="Rider / worker name"
+              required
+            >
+
+            <input
+              id="as"
+              type="date"
+              value="${today()}"
+            >
+
+            <input
+              id="an"
+              placeholder="Notes"
+            >
+
+            <button class="btn">
+              Assign
+            </button>
+
+          </form>
+
+        </div>
+
+        <div class="card">
+
+          <h2>
+            Maintenance
+          </h2>
+
+          <form
+            class="form"
+            onsubmit="addMaintenance(event)"
+          >
+
+            <select id="mm">
+
+              ${d.motorcycles.map(m => `
+                <option value="${m.id}">
+                  ${esc(m.code)}
+                </option>
+              `).join('')}
+
+            </select>
+
+            <input
+              id="mi"
+              placeholder="Problem / issue"
+              required
+            >
+
+            <div class="two">
+
+              <input
+                id="md"
+                type="date"
+                value="${today()}"
+              >
+
+              <input
+                id="mileage"
+                type="number"
+                min="0"
+                placeholder="Mileage"
+              >
 
             </div>
 
             <input
-                id="aq"
-                placeholder="Search audit information..."
-                oninput="filterAudit()"
+              id="mparts"
+              placeholder="Parts used"
             >
 
-            <div
-                id="auditbox"
-                class="tablewrap"
-                style="margin-top:14px"
-            ></div>
+            <div class="two">
+
+              <input
+                id="mcost"
+                type="number"
+                min="0"
+                placeholder="Cost"
+              >
+
+              <input
+                id="mgarage"
+                placeholder="Garage / mechanic"
+              >
+
+            </div>
+
+            <div class="two">
+
+              <input
+                id="mnext"
+                type="date"
+              >
+
+              <input
+                id="mdown"
+                type="number"
+                min="0"
+                placeholder="Downtime (hours)"
+              >
+
+            </div>
+
+            <select id="mstatus">
+              <option>Completed</option>
+              <option>In Progress</option>
+            </select>
+
+            <button class="btn">
+              Save Maintenance
+            </button>
+
+          </form>
 
         </div>
-        `
+
+      </div>
+
+      <div class="section card tablewrap">
+
+        <h2>
+          Recent Income
+        </h2>
+
+        <table class="table">
+
+          <tr>
+            <th>Date</th>
+            <th>Moto</th>
+            <th>Amount</th>
+            <th>Entered by</th>
+            <th>Verified</th>
+          </tr>
+
+          ${d.income
+            .slice(0, 50)
+            .map(x => `
+              <tr>
+
+                <td>
+                  ${esc(x.date)}
+                </td>
+
+                <td>
+                  ${esc(x.motorcycle_code || '-')}
+                </td>
+
+                <td>
+                  ${money(x.amount)}
+                </td>
+
+                <td>
+                  ${esc(
+                    x.entered_by_name ||
+                    x.entered_name ||
+                    '-'
+                  )}
+                </td>
+
+                <td>
+
+                  ${
+                    x.verified
+                      ? 'Verified'
+                      : (
+                          state.me.department_id === 'D3' ||
+                          state.me.department_id === 'D1'
+                        )
+                          ? `
+                            <button
+                              class="btn light"
+                              onclick="verifyIncome(${x.id})"
+                            >
+                              Verify
+                            </button>
+                          `
+                          : 'Pending'
+                  }
+
+                </td>
+
+              </tr>
+            `)
+            .join('')}
+
+        </table>
+
+      </div>
+    `
+  );
+}
+
+async function addMoto(e) {
+  e.preventDefault();
+
+  try {
+    await api('/api/motorcycles', {
+      method: 'POST',
+      body: JSON.stringify({
+        code: $('mcode').value,
+        plate: $('mplate').value,
+        model: $('mmodel').value,
+        purchase_price:
+          Number(
+            $('mprice').value || 0
+          ),
+        purchase_date:
+          $('mpdate').value,
+        status: 'Active'
+      })
+    });
+
+    await refresh();
+
+  } catch (x) {
+    alert(x.message);
+  }
+}
+
+async function verifyIncome(id) {
+  try {
+    await api(
+      '/api/income/' +
+      id +
+      '/verify',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          reason:
+            'Finance verification'
+        })
+      }
     );
 
-    filterAudit();
+    await refresh();
+
+  } catch (x) {
+    alert(x.message);
+  }
+}
+
+async function addIncome(id) {
+  const amount = prompt(
+    'Daily income (RWF):'
+  );
+
+  if (amount === null) return;
+
+  const value = Number(amount);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    alert(
+      'Please enter a valid income amount.'
+    );
+    return;
+  }
+
+  const note =
+    prompt(
+      'Collection note (optional):'
+    ) || '';
+
+  try {
+    await api('/api/income', {
+      method: 'POST',
+      body: JSON.stringify({
+        date: today(),
+        motorcycle_id: id,
+        amount: value,
+        collection_note: note
+      })
+    });
+
+    await refresh();
+
+  } catch (x) {
+    alert(x.message);
+  }
+}
+
+async function assignRider(e) {
+  e.preventDefault();
+
+  try {
+    await api('/api/assignments', {
+      method: 'POST',
+      body: JSON.stringify({
+        motorcycle_id:
+          Number($('am').value),
+        rider_name:
+          $('ar').value,
+        start_date:
+          $('as').value,
+        notes:
+          $('an').value
+      })
+    });
+
+    await refresh();
+
+  } catch (x) {
+    alert(x.message);
+  }
+}
+
+async function addOdometer(e) {
+  e.preventDefault();
+
+  try {
+    await api('/api/odometer', {
+      method: 'POST',
+      body: JSON.stringify({
+        motorcycle_id:
+          Number($('om').value),
+        date:
+          $('odate').value,
+        mileage:
+          Number($('omile').value)
+      })
+    });
+
+    await refresh();
+
+  } catch (x) {
+    alert(x.message);
+  }
+}
+
+async function addMaintenance(e) {
+  e.preventDefault();
+
+  try {
+    await api('/api/maintenance', {
+      method: 'POST',
+      body: JSON.stringify({
+        motorcycle_id:
+          Number($('mm').value),
+
+        issue:
+          $('mi').value,
+
+        date:
+          $('md').value,
+
+        mileage:
+          $('mileage').value
+            ? Number(
+                $('mileage').value
+              )
+            : null,
+
+        parts:
+          $('mparts').value,
+
+        cost:
+          Number(
+            $('mcost').value || 0
+          ),
+
+        garage:
+          $('mgarage').value,
+
+        next_service:
+          $('mnext').value,
+
+        downtime:
+          Number(
+            $('mdown').value || 0
+          ),
+
+        status:
+          $('mstatus').value
+      })
+    });
+
+    await refresh();
+
+  } catch (x) {
+    alert(x.message);
+  }
+}
+
+async function closeDay(e) {
+  e.preventDefault();
+
+  try {
+    const r = await api(
+      '/api/daily-closing',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          date:
+            $('cdate').value,
+          notes:
+            $('cnotes').value
+        })
+      }
+    );
+
+    const dc =
+      r.dailyClosing || {};
+
+    alert(
+      `Closed ${
+        dc.date ||
+        $('cdate').value
+      }: ${money(
+        dc.net || 0
+      )}`
+    );
+
+    await refresh();
+
+  } catch (x) {
+    alert(x.message);
+  }
+}
+
+async function viewMoto(id) {
+  try {
+    const r =
+      await api(
+        '/api/fleet-detail/' +
+        id
+      );
+
+    const text = [
+      `MOTORCYCLE ${
+        r.motorcycle.code
+      }`,
+
+      `Status: ${
+        r.motorcycle.status
+      }`,
+
+      `Income records: ${
+        (r.income || []).length
+      }`,
+
+      `Expense records: ${
+        (r.expenses || []).length
+      }`,
+
+      `Maintenance records: ${
+        (r.maintenance || []).length
+      }`,
+
+      `Odometer records: ${
+        (r.odometer || []).length
+      }`,
+
+      `Assignments: ${
+        (r.assignments || []).length
+      }`
+    ].join('\n');
+
+    alert(text);
+
+  } catch (x) {
+    alert(x.message);
+  }
+}
+
+/* =========================
+   EVIDENCE
+========================= */
+
+function evidence() {
+  shell(
+    'Evidence',
+    `
+      <div class="card">
+
+        <h2>
+          Upload Evidence
+        </h2>
+
+        <form
+          class="form"
+          onsubmit="uploadEvidence(event)"
+        >
+
+          <input
+            id="efile"
+            type="file"
+            required
+          >
+
+          <select id="etask">
+
+            <option value="">
+              No task link
+            </option>
+
+            ${state.data.tasks.map(t => `
+              <option value="${t.id}">
+                ${esc(t.name)}
+              </option>
+            `).join('')}
+
+          </select>
+
+          <button class="btn">
+            Upload
+          </button>
+
+        </form>
+
+      </div>
+
+      <div class="section grid">
+
+        ${state.evidence.map(e => `
+          <div class="card">
+
+            <b>
+              ${esc(e.original_name)}
+            </b>
+
+            <p>
+              ${esc(
+                e.uploaded_name ||
+                e.filename ||
+                ''
+              )}
+              ·
+              ${esc(
+                e.uploaded_at || ''
+              )}
+            </p>
+
+            <a
+              class="btn light"
+              href="${
+                e.url ||
+                (
+                  '/api/evidence/' +
+                  e.id +
+                  '/file'
+                )
+              }"
+              target="_blank"
+              rel="noopener"
+            >
+              Open
+            </a>
+
+          </div>
+        `).join('')}
+
+      </div>
+    `
+  );
+}
+
+async function uploadEvidence(e) {
+  e.preventDefault();
+
+  const file =
+    $('efile').files[0];
+
+  if (!file) {
+    alert('Please select a file.');
+    return;
+  }
+
+  const fd =
+    new FormData();
+
+  fd.append(
+    'file',
+    file
+  );
+
+  if ($('etask').value) {
+    fd.append(
+      'task_id',
+      $('etask').value
+    );
+  }
+
+  try {
+
+    const r =
+      await fetch(
+        '/api/evidence',
+        {
+          method: 'POST',
+          body: fd,
+          credentials: 'include'
+        }
+      );
+
+    const j =
+      await r.json()
+        .catch(() => ({}));
+
+    if (!r.ok) {
+      throw Error(
+        j.error ||
+        'Evidence upload failed'
+      );
+    }
+
+    await refresh();
+
+  } catch (x) {
+    alert(x.message);
+  }
+}
+
+/* =========================
+   AUDIT
+========================= */
+
+function audit() {
+  shell(
+    'Audit Trail',
+    `
+      <div class="card">
+
+        <input
+          id="aq"
+          placeholder="Search all audit information..."
+          oninput="filterAudit()"
+        >
+
+        <div
+          id="auditbox"
+          class="tablewrap"
+          style="margin-top:14px"
+        ></div>
+
+      </div>
+    `
+  );
+
+  filterAudit();
 }
 
 function filterAudit() {
-    const box =
-        $('auditbox');
+  const box =
+    $('auditbox');
 
-    if (!box) return;
+  if (!box) return;
 
-    const query =
-        (
-            $('aq')?.value ||
-            ''
-        )
-            .toLowerCase()
-            .trim();
+  const q =
+    (
+      $('aq')?.value ||
+      ''
+    ).toLowerCase();
 
-    const auditRecords =
-        Array.isArray(state.data.audit)
-            ? state.data.audit
-            : [];
+  const a =
+    state.data.audit.filter(
+      x =>
+        JSON.stringify(x)
+          .toLowerCase()
+          .includes(q)
+    );
 
-    const filtered =
-        auditRecords.filter(record =>
-            JSON.stringify(record)
-                .toLowerCase()
-                .includes(query)
-        );
+  box.innerHTML = `
+    <table class="table">
 
-    box.innerHTML = `
-        <table class="table">
+      <tr>
+        <th>Date/Time</th>
+        <th>Action</th>
+        <th>Record</th>
+        <th>ID</th>
+        <th>Who</th>
+        <th>Reason</th>
+      </tr>
 
-            <tr>
-                <th>Date/Time</th>
-                <th>Action</th>
-                <th>Record</th>
-                <th>ID</th>
-                <th>Who</th>
-                <th>Reason</th>
-            </tr>
+      ${a.map(x => `
+        <tr>
 
-            ${
-                filtered.length
-                    ? filtered.map(
-                        record => `
-                            <tr>
+          <td>
+            ${esc(
+              x.when_at || ''
+            )}
+          </td>
 
-                                <td>
-                                    ${esc(
-                                        record.when_at ||
-                                        record.created_at ||
-                                        '-'
-                                    )}
-                                </td>
+          <td>
+            ${esc(
+              x.action || ''
+            )}
+          </td>
 
-                                <td>
-                                    ${esc(
-                                        record.action ||
-                                        '-'
-                                    )}
-                                </td>
+          <td>
+            ${esc(
+              x.record_type || ''
+            )}
+          </td>
 
-                                <td>
-                                    ${esc(
-                                        record.record_type ||
-                                        '-'
-                                    )}
-                                </td>
+          <td>
+            ${x.record_id || '-'}
+          </td>
 
-                                <td>
-                                    ${esc(
-                                        record.record_id ??
-                                        '-'
-                                    )}
-                                </td>
+          <td>
+            ${esc(
+              x.user_name || '-'
+            )}
+          </td>
 
-                                <td>
-                                    ${esc(
-                                        record.user_name ||
-                                        '-'
-                                    )}
-                                </td>
+          <td>
+            ${esc(
+              x.reason || ''
+            )}
+          </td>
 
-                                <td>
-                                    ${esc(
-                                        record.reason ||
-                                        ''
-                                    )}
-                                </td>
+        </tr>
+      `).join('')}
 
-                            </tr>
-                        `
-                    ).join('')
-                    : `
-                        <tr>
-                            <td colspan="6">
-                                ${empty(
-                                    'No audit records found.'
-                                )}
-                            </td>
-                        </tr>
-                    `
-            }
-
-        </table>
-    `;
+    </table>
+  `;
 }
 
-/* ============================================================
+/* =========================
    REFRESH
-   ============================================================ */
+========================= */
 
 async function refresh() {
-    try {
-        await load();
-
-        if (!allowed(state.page)) {
-            state.page = 'dashboard';
-        }
-
-        render();
-
-    } catch (error) {
-        alert(error.message);
-    }
+  try {
+    await load();
+    render();
+  } catch (x) {
+    alert(
+      x.message ||
+      'Could not refresh data.'
+    );
+  }
 }
 
-/* ============================================================
+/* =========================
    RENDER
-   ============================================================ */
+========================= */
 
 function render() {
-    if (!state.me) {
-        login();
-        return;
-    }
+  if (!state.me) {
+    login();
+    return;
+  }
 
-    if (!allowed(state.page)) {
-        state.page = 'dashboard';
-    }
+  if (!can(state.page)) {
+    state.page = 'dashboard';
+  }
 
-    const pages = {
-        dashboard,
-        departments,
-        tasks,
-        activities,
-        reports,
-        goals,
-        performance,
-        finance,
-        fleet,
-        evidence,
-        audit
-    };
+  const pages = {
+    dashboard,
+    departments,
+    tasks,
+    activities,
+    reports,
+    goals,
+    performance,
+    finance,
+    fleet,
+    evidence,
+    audit
+  };
 
-    const pageRenderer =
-        pages[state.page] ||
-        dashboard;
+  const page =
+    pages[state.page] ||
+    dashboard;
 
-    try {
-        pageRenderer();
-    } catch (error) {
-        console.error(
-            'THE BG WEB render error:',
-            error
-        );
-
-        shell(
-            'System Error',
-            `
-                <div class="card">
-
-                    <h2>
-                        Unable to display this section
-                    </h2>
-
-                    <p class="muted">
-                        The application encountered
-                        an unexpected display error.
-                    </p>
-
-                    <button
-                        class="btn"
-                        onclick="refresh()"
-                    >
-                        Reload
-                    </button>
-
-                </div>
-            `
-        );
-    }
+  page();
 }
 
-/* ============================================================
-   GLOBAL ERROR HANDLING
-   ============================================================ */
-
-window.addEventListener(
-    'unhandledrejection',
-    event => {
-        console.error(
-            'THE BG WEB unhandled rejection:',
-            event.reason
-        );
-    }
-);
-
-window.addEventListener(
-    'error',
-    event => {
-        console.error(
-            'THE BG WEB frontend error:',
-            event.error
-        );
-    }
-);
-
-/* ============================================================
+/* =========================
    START APPLICATION
-   ============================================================ */
+========================= */
 
-(async function start() {
-    try {
-        const response =
-            await api('/api/me');
-
-        if (response?.user) {
-            state.me =
-                response.user;
-
-            await load();
-
-            state.page =
-                allowed(state.page)
-                    ? state.page
-                    : 'dashboard';
-
-            render();
-        } else {
-            login();
-        }
-
-    } catch {
-        login();
-    }
+(async () => {
+  await boot();
 })();
